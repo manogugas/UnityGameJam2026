@@ -157,11 +157,21 @@ MonoBehaviour:
     defenceMultiplier: 0.8
     streakBonusPerStep: 0.25
     maxStreakMultiplier: 2
-    coverWindowSeconds: 2.5
+    defendWindowSeconds: 2.5
     reviveHP: 10
     backfireDamage: 5
     jackpotReflect: 0.5
+    raiseStake: 4
+    raiseMultiplier: 1.5
+    allInStake: 8
+    allInMultiplier: 2
+    bigThreshold: 10
+    sideBetWin: 2
+    sideBetLoss: 1
+    ghostBetDelay: 1.6
+    teamMeterMax: 5
   ghostName: Lucky Lou, the Eternal High Roller
+  theme: {fileID: 11400000, guid: 973be3668583eff4ea254275bc89b26f, type: 2}
 --- !u!4 &1594281195
 Transform:
   m_ObjectHideFlags: 0

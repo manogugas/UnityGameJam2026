@@ -1,6 +1,8 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using HauntedCasino.UI;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -36,42 +38,44 @@ namespace HauntedCasino.Combat
         public override Color Accent => new Color(1f, 0.4f, 0.4f);
 
         const int TickerCells = 7;
-        readonly Text[] cellText = new Text[TickerCells];
+        readonly TextMeshProUGUI[] cellText = new TextMeshProUGUI[TickerCells];
         readonly Image[] cellBg = new Image[TickerCells];
         RectTransform betRow;
-        Text luckyText;
+        TextMeshProUGUI luckyText;
         int luckyNumber = 7;
         Bet chosen;
 
         protected override void BuildUI(RectTransform root)
         {
-            var ticker = UIFactory.Rect(root, "Wheel").Anchor(0.06f, 0.5f, 0.94f, 0.8f);
+            var ticker = UIFactory.Rect(root, "Wheel").Anchor(0.05f, 0.5f, 0.95f, 0.77f);
             for (int i = 0; i < TickerCells; i++)
             {
                 bool centre = i == TickerCells / 2;
-                cellBg[i] = UIFactory.Panel(ticker, "Cell" + i, BlackCell);
-                cellBg[i].rectTransform.Anchor((float)i / TickerCells, centre ? 0f : 0.15f, (float)(i + 1) / TickerCells, centre ? 1f : 0.85f, 4);
-                if (centre)
-                {
-                    var outline = cellBg[i].gameObject.AddComponent<Outline>();
-                    outline.effectColor = Gold;
-                    outline.effectDistance = new Vector2(4, 4);
-                }
-                cellText[i] = UIFactory.Label(cellBg[i].transform, "", centre ? 50 : 30, Color.white);
-                cellText[i].fontStyle = FontStyle.Bold;
+                var slot = UIFactory.Rect(ticker, "Slot" + i)
+                    .Anchor((float)i / TickerCells, centre ? 0f : 0.14f, (float)(i + 1) / TickerCells, centre ? 1f : 0.86f, 3);
+                cellBg[i] = UIFactory.Panel(slot, "Cell", BlackCell, DecoSprites.FrameFill, 3f);
+                if (centre) UIFactory.Panel(slot, "Border", Theme.goldBright, DecoSprites.FrameBorder, 2f);
+                cellText[i] = UIFactory.Label(slot, "", centre ? Theme.title + 6 : Theme.body + 2, Color.white, TextAnchor.MiddleCenter, true);
             }
 
-            betRow = UIFactory.Rect(root, "Bets").Anchor(0.03f, 0.22f, 0.97f, 0.46f);
-            UIFactory.Row(betRow, 8);
-            UIFactory.Button(betRow, $"RED [1]\n<size=16>x{colourPower}</size>", RedCell, () => chosen = Bet.Red, 20);
-            UIFactory.Button(betRow, $"BLACK [2]\n<size=16>x{colourPower}</size>", new Color(0.25f, 0.25f, 0.28f), () => chosen = Bet.Black, 20);
-            UIFactory.Button(betRow, $"1-12 [3]\n<size=16>x{dozenPower}</size>", new Color(0.2f, 0.3f, 0.55f), () => chosen = Bet.Dozen1, 20);
-            UIFactory.Button(betRow, $"13-24 [4]\n<size=16>x{dozenPower}</size>", new Color(0.2f, 0.3f, 0.55f), () => chosen = Bet.Dozen2, 20);
-            UIFactory.Button(betRow, $"25-36 [5]\n<size=16>x{dozenPower}</size>", new Color(0.2f, 0.3f, 0.55f), () => chosen = Bet.Dozen3, 20);
-            UIFactory.Button(betRow, "<", new Color(0.3f, 0.25f, 0.1f), () => ChangeLucky(-1), 22);
-            var lucky = UIFactory.Button(betRow, "", new Color(0.55f, 0.4f, 0.05f), () => chosen = Bet.Lucky, 20);
-            luckyText = lucky.GetComponentInChildren<Text>();
-            UIFactory.Button(betRow, ">", new Color(0.3f, 0.25f, 0.1f), () => ChangeLucky(1), 22);
+            // Two rows of bets so they fit the side panel.
+            betRow = UIFactory.Rect(root, "Bets").Anchor(0.03f, 0.2f, 0.97f, 0.48f);
+            var top = UIFactory.Rect(betRow, "Outside").Anchor(0f, 0.52f, 1f, 1f);
+            UIFactory.Row(top, 6);
+            int s = Theme.small - 2;
+            UIFactory.Button(top, $"RED {KeyCap("1")}\n<size=75%>x{colourPower}</size>", RedCell, () => chosen = Bet.Red, s, true);
+            UIFactory.Button(top, $"BLACK {KeyCap("2")}\n<size=75%>x{colourPower}</size>", new Color(0.18f, 0.17f, 0.2f), () => chosen = Bet.Black, s, true);
+            UIFactory.Button(top, $"1-12 {KeyCap("3")}\n<size=75%>x{dozenPower}</size>", new Color(0.12f, 0.22f, 0.4f), () => chosen = Bet.Dozen1, s, true);
+            UIFactory.Button(top, $"13-24 {KeyCap("4")}\n<size=75%>x{dozenPower}</size>", new Color(0.12f, 0.22f, 0.4f), () => chosen = Bet.Dozen2, s, true);
+            UIFactory.Button(top, $"25-36 {KeyCap("5")}\n<size=75%>x{dozenPower}</size>", new Color(0.12f, 0.22f, 0.4f), () => chosen = Bet.Dozen3, s, true);
+            var bottom = UIFactory.Rect(betRow, "Lucky").Anchor(0.12f, 0f, 0.88f, 0.48f);
+            var lucky = UIFactory.Button(bottom, "", Color.Lerp(Theme.burgundy, Theme.gold, 0.35f), () => chosen = Bet.Lucky, s, true);
+            ((RectTransform)lucky.transform).Anchor(0.16f, 0f, 0.84f, 1f, 2);
+            luckyText = lucky.GetComponentInChildren<TextMeshProUGUI>();
+            var minus = UIFactory.Button(bottom, "<", Theme.panelRaised, () => ChangeLucky(-1), Theme.body, true);
+            ((RectTransform)minus.transform).Anchor(0f, 0.1f, 0.14f, 0.9f);
+            var plus = UIFactory.Button(bottom, ">", Theme.panelRaised, () => ChangeLucky(1), Theme.body, true);
+            ((RectTransform)plus.transform).Anchor(0.86f, 0.1f, 1f, 0.9f);
             UpdateLuckyLabel();
         }
 
@@ -81,7 +85,8 @@ namespace HauntedCasino.Combat
             UpdateLuckyLabel();
         }
 
-        void UpdateLuckyLabel() => luckyText.text = $"LUCKY #{luckyNumber} [6]\n<size=16>x{luckyPower}  arrow keys</size>";
+        void UpdateLuckyLabel() =>
+            luckyText.text = $"LUCKY #{luckyNumber} {KeyCap("6")}\n<size=75%>x{luckyPower}   ·   {KeyCap("←")}{KeyCap("→")} to change</size>";
 
         protected override IEnumerator Run(GambleContext ctx, Action<GambleOutcome> done)
         {
@@ -122,6 +127,7 @@ namespace HauntedCasino.Combat
 
             betRow.gameObject.SetActive(false);
             ResultText.text = $"Bet: {BetName(chosen)}";
+            CasinoSfx.Play(Sfx.Chip, 1.1f);
 
             int steps = Random.Range(minSpinSteps, maxSpinSteps + 1);
             for (int s = 0; s < steps; s++)
@@ -129,8 +135,10 @@ namespace HauntedCasino.Combat
                 index = (index + 1) % WheelOrder.Length;
                 ShowTicker(index);
                 float t = (float)s / steps;
+                if (s % 2 == 0 || t > 0.5f) CasinoSfx.Tick(1.2f - t * 0.4f, 0.25f + t * 0.3f);
                 yield return new WaitForSeconds(Mathf.Lerp(0.015f, 0.2f, t * t));
             }
+            CasinoSfx.Play(Sfx.Chip, 0.7f);
 
             done(Evaluate(WheelOrder[index]));
         }

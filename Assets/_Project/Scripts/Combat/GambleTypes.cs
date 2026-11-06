@@ -27,5 +27,12 @@ namespace HauntedCasino.Combat
         public bool IsAI;
         public string ActorName;
         public Color ActorColor;
+        public string OpponentName;
+        public Color OpponentColor;
+        /// <summary>Damage the defender is trying to block (defence rolls only).</summary>
+        public int Incoming;
+        public float DefenceMultiplier;
+        /// <summary>Damage multiplier from the chips the attacker staked (1 = no stake).</summary>
+        public float StakeMultiplier;
     }
 }

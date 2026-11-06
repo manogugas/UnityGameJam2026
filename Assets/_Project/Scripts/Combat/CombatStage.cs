@@ -4,18 +4,43 @@ using UnityEngine;
 
 namespace HauntedCasino.Combat
 {
-    /// <summary>Builds the placeholder 3D casino table, gamblers and ghost, and plays hit feedback.</summary>
+    /// <summary>
+    /// Builds the placeholder 3D casino table, gamblers and ghost, and shows who is fighting whom:
+    /// an attack marker over the attacker, a shield/target disc over the defender, an attack beam,
+    /// an attacker lunge and a camera shot framing the exchange. Also plays hit feedback:
+    /// flashes, shakes, hit-stop, camera punch and coin bursts.
+    /// </summary>
     public class CombatStage : MonoBehaviour
     {
+        class Actor
+        {
+            public Combatant C;
+            public Transform T;
+            public Renderer Body;
+            public Vector3 Home;
+            public Color BaseColor;
+            public float MarkerHeight;
+            public float Shake;
+            public float Lunge;
+        }
+
+        static readonly Vector3 OverviewPos = new Vector3(0f, 4.6f, -7.2f);
+        static readonly Vector3 OverviewLook = new Vector3(0f, 1.6f, 1.2f);
+
+        [Tooltip("Shifts framed action to the right so the game panel on the left doesn't cover it.")]
+        [SerializeField] float shotScreenShift = 1.1f;
+
         public Camera Cam { get; private set; }
 
-        readonly Dictionary<Combatant, Transform> actors = new Dictionary<Combatant, Transform>();
-        readonly Dictionary<Combatant, Renderer> bodies = new Dictionary<Combatant, Renderer>();
-        readonly Dictionary<Combatant, Vector3> homes = new Dictionary<Combatant, Vector3>();
-        Combatant ghost;
-        Combatant active;
-        Transform marker;
+        readonly Dictionary<Combatant, Actor> actors = new Dictionary<Combatant, Actor>();
+        Combatant ghost, attacker, defender;
+        Transform attackMarker, defendMarker;
+        Material defendMarkerMat;
+        LineRenderer beam;
+        ParticleSystem coins;
+        CombatCamera director;
         Shader litShader;
+        bool hitStopping;
 
         public void BuildEnvironment()
         {
@@ -29,11 +54,11 @@ namespace HauntedCasino.Combat
                 camGo.tag = "MainCamera";
                 Cam = camGo.GetComponent<Camera>();
             }
-            Cam.transform.position = new Vector3(0f, 4.6f, -7.2f);
-            Cam.transform.LookAt(new Vector3(0f, 1.6f, 1.2f));
-            Cam.fieldOfView = 55f;
             Cam.clearFlags = CameraClearFlags.SolidColor;
             Cam.backgroundColor = new Color(0.03f, 0.015f, 0.04f);
+            director = Cam.GetComponent<CombatCamera>();
+            if (director == null) director = Cam.gameObject.AddComponent<CombatCamera>();
+            director.Init(Cam, OverviewPos, OverviewLook);
 
             RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(0.16f, 0.12f, 0.2f);
@@ -64,10 +89,55 @@ namespace HauntedCasino.Combat
             leg.position = new Vector3(0f, 0.4f, 0.8f);
             leg.localScale = new Vector3(0.6f, 0.4f, 0.6f);
 
-            var markerT = Prim(PrimitiveType.Sphere, "TurnMarker", GambleGame.Gold, 2f);
-            markerT.localScale = Vector3.one * 0.3f;
-            marker = markerT;
-            marker.gameObject.SetActive(false);
+            attackMarker = Prim(PrimitiveType.Cube, "AttackMarker", CombatUI.AttackColor, 2.5f);
+            attackMarker.localScale = Vector3.one * 0.35f;
+            attackMarker.gameObject.SetActive(false);
+
+            defendMarker = Prim(PrimitiveType.Cylinder, "DefendMarker", CombatUI.DefendColor, 2.5f);
+            defendMarker.localScale = new Vector3(0.6f, 0.04f, 0.6f);
+            defendMarkerMat = defendMarker.GetComponent<Renderer>().material;
+            defendMarker.gameObject.SetActive(false);
+
+            beam = new GameObject("AttackBeam").AddComponent<LineRenderer>();
+            var beamShader = Shader.Find("Sprites/Default");
+            if (beamShader == null) beamShader = Shader.Find("Universal Render Pipeline/Unlit");
+            beam.material = new Material(beamShader);
+            beam.positionCount = 2;
+            beam.numCapVertices = 4;
+            beam.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            beam.enabled = false;
+
+            coins = BuildCoinBurst();
+        }
+
+        ParticleSystem BuildCoinBurst()
+        {
+            var go = new GameObject("CoinBurst");
+            go.transform.rotation = Quaternion.Euler(-90f, 0f, 0f);
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.playOnAwake = false;
+            main.loop = false;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.9f, 1.5f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(3f, 7f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.1f, 0.2f);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI);
+            main.gravityModifier = 1.3f;
+            main.startColor = new ParticleSystem.MinMaxGradient(GambleGame.Gold, new Color(1f, 0.95f, 0.6f));
+            main.maxParticles = 400;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var emission = ps.emission;
+            emission.enabled = false;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 35f;
+            shape.radius = 0.2f;
+            var rend = go.GetComponent<ParticleSystemRenderer>();
+            var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+            if (shader == null) shader = Shader.Find("Sprites/Default");
+            rend.material = new Material(shader);
+            return ps;
         }
 
         public void BuildActors(List<Combatant> players, Combatant ghostCombatant)
@@ -79,7 +149,7 @@ namespace HauntedCasino.Combat
                 var body = Prim(PrimitiveType.Capsule, players[i].Name, players[i].Color);
                 body.position = new Vector3(x, 1f, -1.7f);
                 body.localScale = new Vector3(0.8f, 1f, 0.8f);
-                Register(players[i], body);
+                Register(players[i], body, body.GetComponent<Renderer>(), 1.5f);
             }
 
             ghost = ghostCombatant;
@@ -110,64 +180,164 @@ namespace HauntedCasino.Combat
             glow.intensity = 3f;
             glow.transform.SetParent(root, false);
             glow.transform.localPosition = new Vector3(0f, 0f, -1.5f);
-            Register(ghost, root, ghostBody.GetComponent<Renderer>());
+            Register(ghost, root, ghostBody.GetComponent<Renderer>(), 2.35f);
         }
 
-        void Register(Combatant c, Transform t, Renderer r = null)
+        void Register(Combatant c, Transform t, Renderer r, float markerHeight)
         {
-            actors[c] = t;
-            bodies[c] = r != null ? r : t.GetComponent<Renderer>();
-            homes[c] = t.position;
+            actors[c] = new Actor
+            {
+                C = c, T = t, Body = r, Home = t.position, BaseColor = r.material.GetColor("_BaseColor"), MarkerHeight = markerHeight
+            };
         }
 
         public Vector3 PopupPoint(Combatant c) =>
-            actors.TryGetValue(c, out var t) ? t.position + Vector3.up * (c == ghost ? 0.9f : 1.5f) : Vector3.zero;
+            actors.TryGetValue(c, out var a) ? a.T.position + Vector3.up * (c == ghost ? 0.1f : 1.2f) : Vector3.zero;
 
-        public void SetActive(Combatant c)
+        /// <summary>Show who attacks whom and frame the exchange. Pass nulls to clear (overview shot).</summary>
+        public void SetRoles(Combatant attackerCombatant, Combatant defenderCombatant, bool defending = true)
         {
-            active = c;
-            marker.gameObject.SetActive(c != null);
+            bool newAttacker = attackerCombatant != null && attackerCombatant != attacker;
+            attacker = attackerCombatant;
+            defender = defenderCombatant;
+            var markerColor = defending ? CombatUI.DefendColor : CombatUI.TargetColor;
+            defendMarkerMat.SetColor("_BaseColor", markerColor);
+            defendMarkerMat.SetColor("_EmissionColor", markerColor * 2.5f);
+            attackMarker.gameObject.SetActive(attacker != null);
+            defendMarker.gameObject.SetActive(defender != null);
+            beam.enabled = attacker != null && defender != null;
+            if (newAttacker) CasinoSfx.Play(Sfx.Whoosh, Random.Range(0.9f, 1.1f));
+            UpdateShot();
         }
 
-        public void Hit(Combatant c) => StartCoroutine(HitRoutine(c));
-
-        public void SetDown(Combatant c, bool down)
+        void UpdateShot()
         {
-            if (!actors.TryGetValue(c, out var t) || c == ghost) return;
-            t.rotation = down ? Quaternion.Euler(0f, 0f, 80f) : Quaternion.identity;
-            t.position = homes[c] + (down ? Vector3.down * 0.6f : Vector3.zero);
-            SetColor(bodies[c], down ? c.Color * 0.3f : c.Color);
-        }
-
-        IEnumerator HitRoutine(Combatant c)
-        {
-            if (!actors.TryGetValue(c, out var t)) yield break;
-            var r = bodies[c];
-            for (float time = 0; time < 0.35f; time += Time.deltaTime)
+            if (attacker == null || defender == null
+                || !actors.TryGetValue(attacker, out var a) || !actors.TryGetValue(defender, out var d))
             {
-                SetColor(r, Mathf.Repeat(time, 0.1f) < 0.05f ? Color.white : Color.red);
-                t.position = homes[c] + (Vector3)Random.insideUnitCircle * 0.15f + GhostBob(c);
-                yield return null;
+                director.SetShot(OverviewPos, OverviewLook);
+                return;
             }
-            t.position = homes[c] + GhostBob(c);
-            SetColor(r, c.IsDown && c != ghost ? c.Color * 0.3f : c == ghost ? CombatUI.GhostColor : c.Color);
-            if (c.IsDown && c != ghost) SetDown(c, true);
+
+            Vector3 from = a.Home, to = d.Home;
+            Vector3 away = from - to;
+            away.y = 0f;
+            away.Normalize();
+            Vector3 side = Vector3.Cross(Vector3.up, away).normalized;
+            Vector3 pos, look;
+            // Framing aims low so both fighters sit above the bottom UI panels.
+            if (attacker == ghost)
+            {
+                // Wide side-on shot of the table: ghost on one side, its victim on the other.
+                Vector3 mid = Vector3.Lerp(from, to, 0.5f);
+                pos = mid + side * 8f + Vector3.up * 4.2f - away * 0.6f;
+                look = mid - Vector3.up * 0.6f;
+            }
+            else
+            {
+                // Behind the gambler, looking past them at the ghost.
+                pos = from + away * 4.2f + Vector3.up * 2.2f - side * 1.2f;
+                look = Vector3.Lerp(from, to, 0.55f) - Vector3.up * 0.3f;
+            }
+            Vector3 fwd = (look - pos).normalized;
+            Vector3 right = Vector3.Cross(Vector3.up, fwd).normalized;
+            director.SetShot(pos, look - right * shotScreenShift);
         }
 
-        Vector3 GhostBob(Combatant c) => c == ghost ? Vector3.up * Mathf.Sin(Time.time * 1.6f) * 0.18f : Vector3.zero;
+        /// <summary>Hit feedback. Strength 0..1 scales shake, camera punch and hit-stop.</summary>
+        public void Hit(Combatant c, float strength = 0.5f)
+        {
+            strength = Mathf.Clamp01(strength);
+            if (actors.TryGetValue(c, out var a)) a.Shake = 0.25f + 0.25f * strength;
+            director.Punch(0.3f + 0.7f * strength);
+            CasinoSfx.Play(Sfx.Hit, Random.Range(0.85f, 1.1f) - strength * 0.2f);
+            if (strength >= 0.5f) StartCoroutine(HitStop(0.05f + 0.1f * strength));
+        }
+
+        public void CoinBurst(Combatant c, int count)
+        {
+            if (!actors.TryGetValue(c, out var a)) return;
+            coins.transform.position = a.T.position + Vector3.up * 0.6f;
+            coins.Emit(count);
+            CasinoSfx.Play(Sfx.Coin, Random.Range(0.95f, 1.15f));
+        }
+
+        IEnumerator HitStop(float duration)
+        {
+            if (hitStopping) yield break;
+            hitStopping = true;
+            Time.timeScale = 0.05f;
+            yield return new WaitForSecondsRealtime(duration);
+            Time.timeScale = 1f;
+            hitStopping = false;
+        }
+
+        void OnDisable() => Time.timeScale = 1f;
 
         void Update()
         {
-            if (ghost != null && actors.TryGetValue(ghost, out var g))
+            float dt = Time.deltaTime;
+            foreach (var a in actors.Values) UpdateActor(a, dt);
+
+            if (attacker != null && actors.TryGetValue(attacker, out var atk))
             {
-                g.position = homes[ghost] + GhostBob(ghost);
-                g.rotation = Quaternion.Euler(0f, Mathf.Sin(Time.time * 0.7f) * 12f, Mathf.Sin(Time.time * 1.1f) * 4f);
+                attackMarker.position = atk.T.position + Vector3.up * (atk.MarkerHeight + Mathf.Sin(Time.time * 5f) * 0.1f);
+                attackMarker.rotation = Quaternion.Euler(45f, Time.time * 180f, 45f);
             }
-            if (active != null && marker != null && actors.TryGetValue(active, out var a))
+            if (defender != null && actors.TryGetValue(defender, out var def))
             {
-                float height = active == ghost ? 3.3f : 2.2f;
-                marker.position = a.position + Vector3.up * (height + Mathf.Sin(Time.time * 4f) * 0.12f);
+                defendMarker.position = def.T.position + Vector3.up * (def.MarkerHeight + 0.1f);
+                defendMarker.rotation = Quaternion.LookRotation(Cam.transform.forward) * Quaternion.Euler(90f, 0f, 0f);
             }
+            if (beam.enabled && actors.TryGetValue(attacker, out var from) && actors.TryGetValue(defender, out var to))
+            {
+                beam.SetPosition(0, from.T.position + Vector3.up * (attacker == ghost ? 0.5f : 0.4f));
+                beam.SetPosition(1, to.T.position + Vector3.up * (defender == ghost ? 0.5f : 0.4f));
+                float pulse = 0.05f + Mathf.Abs(Mathf.Sin(Time.time * 6f)) * 0.05f;
+                beam.startWidth = pulse * 1.6f;
+                beam.endWidth = pulse * 0.5f;
+                var c0 = CombatUI.AttackColor;
+                var c1 = CombatUI.AttackColor;
+                c0.a = 0.9f;
+                c1.a = 0.35f;
+                beam.startColor = c0;
+                beam.endColor = c1;
+            }
+        }
+
+        void UpdateActor(Actor a, float dt)
+        {
+            bool isGhost = a.C == ghost;
+            bool down = a.C.IsDown && !isGhost;
+            Vector3 pos = a.Home;
+
+            if (isGhost) pos += Vector3.up * Mathf.Sin(Time.time * 1.6f) * 0.18f;
+            if (down) pos += Vector3.down * 0.6f;
+
+            float lungeTarget = a.C == attacker && defender != null ? 1f : 0f;
+            a.Lunge = Mathf.MoveTowards(a.Lunge, lungeTarget, dt * 3f);
+            if (a.Lunge > 0f && defender != null && actors.TryGetValue(defender, out var target))
+            {
+                Vector3 dir = target.Home - a.Home;
+                dir.y = 0f;
+                pos += dir.normalized * (0.6f * a.Lunge);
+            }
+
+            Color color = down ? a.BaseColor * 0.3f : a.BaseColor;
+            if (a.Shake > 0f)
+            {
+                a.Shake -= dt;
+                pos += (Vector3)Random.insideUnitCircle * 0.15f;
+                color = Mathf.Repeat(a.Shake, 0.1f) < 0.05f ? Color.white : Color.red;
+            }
+            a.T.position = pos;
+
+            if (isGhost)
+                a.T.rotation = Quaternion.Euler(0f, Mathf.Sin(Time.time * 0.7f) * 12f, Mathf.Sin(Time.time * 1.1f) * 4f);
+            else
+                a.T.rotation = down ? Quaternion.Euler(0f, 0f, 80f) : Quaternion.Euler(a.Lunge * 15f, 0f, 0f);
+
+            SetColor(a.Body, color);
         }
 
         Transform Prim(PrimitiveType type, string name, Color color, float emission = 0f)
