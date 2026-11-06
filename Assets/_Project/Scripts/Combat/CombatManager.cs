@@ -24,6 +24,8 @@ namespace HauntedCasino.Combat
         [SerializeField] CombatConfig config = new CombatConfig();
         [SerializeField] string ghostName = "Lucky Lou, the Eternal High Roller";
         [SerializeField] UITheme theme;
+        [Tooltip("Material assets for the generated 3D stage (needed so builds include their shaders).")]
+        [SerializeField] StageMaterials stageMaterials = new StageMaterials();
 
         static readonly string[] PlayerNames = { "Ace", "Jinx", "Clover", "Snake Eyes" };
         static readonly Color[] PlayerColors =
@@ -105,7 +107,7 @@ namespace HauntedCasino.Combat
             games = new List<GambleGame> { GetOrAdd<SlotsGame>(), GetOrAdd<RouletteGame>(), GetOrAdd<DiceGame>() };
             partySlots = GetOrAdd<PartySlotsGame>();
 
-            stage.BuildEnvironment();
+            stage.BuildEnvironment(stageMaterials);
             ui.BuildBase();
             foreach (var g in games) g.Build(ui.GameHost);
             partySlots.Build(ui.GameHost);

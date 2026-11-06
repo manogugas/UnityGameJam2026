@@ -172,6 +172,11 @@ MonoBehaviour:
     teamMeterMax: 5
   ghostName: Lucky Lou, the Eternal High Roller
   theme: {fileID: 11400000, guid: 973be3668583eff4ea254275bc89b26f, type: 2}
+  stageMaterials:
+    lit: {fileID: 2100000, guid: cf902a928c1bceb44ad93dec1f4b56ff, type: 2}
+    litEmissive: {fileID: 2100000, guid: 14075b18a87686d4980685e6fbaa8ba9, type: 2}
+    beam: {fileID: 2100000, guid: ccb2536a341603947aa41e5401393041, type: 2}
+    particles: {fileID: 2100000, guid: cdc220a2bef7b1e4680cd30591f5f015, type: 2}
 --- !u!4 &1594281195
 Transform:
   m_ObjectHideFlags: 0

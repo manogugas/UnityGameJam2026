@@ -12,28 +12,38 @@ namespace HauntedCasino.UI
         static Sprite frameFill, frameBorder, pillFill, pillBorder, chipBase, chipMarks, sunburst, vignette, barShade, diamond, glow;
 
         /// <summary>Chamfered panel body (9-sliced).</summary>
-        public static Sprite FrameFill => frameFill ??= Chamfer(96, 14f, d => Alpha(d, 0f, 999f), 24);
+        public static Sprite FrameFill => Get(ref frameFill, () => Chamfer(96, 14f, d => Alpha(d, 0f, 999f), 24));
         /// <summary>Double gold rule that follows the chamfer (9-sliced).</summary>
-        public static Sprite FrameBorder => frameBorder ??= Chamfer(96, 14f, d => Mathf.Max(Alpha(d, 0f, 3f), Alpha(d, 6f, 7.5f) * 0.8f), 24);
-        public static Sprite PillFill => pillFill ??= Rounded(64, 18f, d => Alpha(d, 0f, 999f), 22);
-        public static Sprite PillBorder => pillBorder ??= Rounded(64, 18f, d => Alpha(d, 0f, 2.5f), 22);
-        public static Sprite ChipBase => chipBase ??= Circle(128, (r, a) => r <= 1f ? 1f : 0f);
-        public static Sprite ChipMarks => chipMarks ??= Circle(128, ChipMarksAlpha);
-        public static Sprite Sunburst => sunburst ??= Circle(256, SunburstAlpha);
-        public static Sprite Vignette => vignette ??= Circle(256, (r, a) => Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 1.45f, r)));
-        public static Sprite Glow => glow ??= Circle(128, (r, a) => Mathf.Pow(Mathf.Clamp01(1f - r), 2f));
-        public static Sprite Diamond => diamond ??= Make(32, 32, (x, y) =>
+        public static Sprite FrameBorder => Get(ref frameBorder, () => Chamfer(96, 14f, d => Mathf.Max(Alpha(d, 0f, 3f), Alpha(d, 6f, 7.5f) * 0.8f), 24));
+        public static Sprite PillFill => Get(ref pillFill, () => Rounded(64, 18f, d => Alpha(d, 0f, 999f), 22));
+        public static Sprite PillBorder => Get(ref pillBorder, () => Rounded(64, 18f, d => Alpha(d, 0f, 2.5f), 22));
+        public static Sprite ChipBase => Get(ref chipBase, () => Circle(128, (r, a) => r <= 1f ? 1f : 0f));
+        public static Sprite ChipMarks => Get(ref chipMarks, () => Circle(128, ChipMarksAlpha));
+        public static Sprite Sunburst => Get(ref sunburst, () => Circle(256, SunburstAlpha));
+        public static Sprite Vignette => Get(ref vignette, () => Circle(256, (r, a) => Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.55f, 1.45f, r))));
+        public static Sprite Glow => Get(ref glow, () => Circle(128, (r, a) => Mathf.Pow(Mathf.Clamp01(1f - r), 2f)));
+        public static Sprite Diamond => Get(ref diamond, () => Make(32, 32, (x, y) =>
         {
             float d = Mathf.Abs(x - 15.5f) + Mathf.Abs(y - 15.5f);
             return Mathf.Clamp01(15.5f - d);
-        }, Vector4.zero);
+        }, Vector4.zero));
         /// <summary>Vertical shading for bar fills: lighter top, darker bottom.</summary>
-        public static Sprite BarShade => barShade ??= Make(4, 32, (x, y) => 1f, Vector4.zero, (x, y) =>
+        public static Sprite BarShade => Get(ref barShade, () => Make(4, 32, (x, y) => 1f, Vector4.zero, (x, y) =>
         {
             float t = y / 31f;
             float v = Mathf.Lerp(0.62f, 1f, t) + (t > 0.78f && t < 0.88f ? 0.25f : 0f);
             return new Color(v, v, v, 1f);
-        });
+        }));
+
+        /// <summary>
+        /// Cache with Unity's null check: generated textures are destroyed when play mode exits,
+        /// but static fields survive when domain reload is disabled, so rebuild dead sprites.
+        /// </summary>
+        static Sprite Get(ref Sprite cached, System.Func<Sprite> build)
+        {
+            if (cached == null || cached.texture == null) cached = build();
+            return cached;
+        }
 
         // ---------- Shapes ----------
 
@@ -100,7 +110,13 @@ namespace HauntedCasino.UI
 
         static Sprite Make(int w, int h, System.Func<int, int, float> alpha, Vector4 border, System.Func<int, int, Color> color = null)
         {
-            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp, filterMode = FilterMode.Bilinear };
+            var tex = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            {
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear,
+                // Survive scene reloads ("Play again"), which unload unreferenced assets.
+                hideFlags = HideFlags.DontUnloadUnusedAsset
+            };
             var px = new Color32[w * h];
             for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
@@ -111,7 +127,9 @@ namespace HauntedCasino.UI
             }
             tex.SetPixels32(px);
             tex.Apply(false, true);
-            return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+            var sprite = Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, border);
+            sprite.hideFlags = HideFlags.DontUnloadUnusedAsset;
+            return sprite;
         }
     }
 }

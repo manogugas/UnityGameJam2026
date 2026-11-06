@@ -39,13 +39,12 @@ namespace HauntedCasino.Combat
         LineRenderer beam;
         ParticleSystem coins;
         CombatCamera director;
-        Shader litShader;
+        StageMaterials mats;
         bool hitStopping;
 
-        public void BuildEnvironment()
+        public void BuildEnvironment(StageMaterials materials)
         {
-            litShader = Shader.Find("Universal Render Pipeline/Lit");
-            if (litShader == null) litShader = Shader.Find("Standard");
+            mats = materials ?? new StageMaterials();
 
             Cam = Camera.main;
             if (Cam == null)
@@ -99,9 +98,7 @@ namespace HauntedCasino.Combat
             defendMarker.gameObject.SetActive(false);
 
             beam = new GameObject("AttackBeam").AddComponent<LineRenderer>();
-            var beamShader = Shader.Find("Sprites/Default");
-            if (beamShader == null) beamShader = Shader.Find("Universal Render Pipeline/Unlit");
-            beam.material = new Material(beamShader);
+            beam.material = mats.MakeBeam();
             beam.positionCount = 2;
             beam.numCapVertices = 4;
             beam.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
@@ -134,9 +131,7 @@ namespace HauntedCasino.Combat
             shape.angle = 35f;
             shape.radius = 0.2f;
             var rend = go.GetComponent<ParticleSystemRenderer>();
-            var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
-            if (shader == null) shader = Shader.Find("Sprites/Default");
-            rend.material = new Material(shader);
+            rend.material = mats.MakeParticles();
             return ps;
         }
 
@@ -346,11 +341,11 @@ namespace HauntedCasino.Combat
             go.name = name;
             var col = go.GetComponent<Collider>();
             if (col != null) Destroy(col);
-            var mat = new Material(litShader);
+            var mat = mats.MakeLit(emission > 0f);
             var r = go.GetComponent<Renderer>();
-            r.material = mat;
+            if (mat != null) r.material = mat;
             SetColor(r, color);
-            if (emission > 0f)
+            if (emission > 0f && mat != null)
             {
                 mat.EnableKeyword("_EMISSION");
                 mat.SetColor("_EmissionColor", color * emission);
@@ -364,6 +359,42 @@ namespace HauntedCasino.Combat
             if (r == null) return;
             r.material.SetColor("_BaseColor", c);
             r.material.SetColor("_Color", c);
+        }
+    }
+}
+
+namespace HauntedCasino.Combat
+{
+    /// <summary>
+    /// Material templates for the generated stage. They must be real assets referenced from the scene:
+    /// a build strips shaders nothing references, so Shader.Find alone returns null in players.
+    /// </summary>
+    [System.Serializable]
+    public class StageMaterials
+    {
+        [Tooltip("URP/Lit, used for the table, gamblers and props.")]
+        public Material lit;
+        [Tooltip("URP/Lit with Emission enabled (keeps the emissive shader variant in builds).")]
+        public Material litEmissive;
+        [Tooltip("Sprites/Default (vertex colours), used for the attack beam.")]
+        public Material beam;
+        [Tooltip("URP Particles/Unlit, used for coin bursts.")]
+        public Material particles;
+
+        public Material MakeLit(bool emissive) => Make(emissive && litEmissive != null ? litEmissive : lit, "Universal Render Pipeline/Lit");
+        public Material MakeBeam() => Make(beam, "Sprites/Default");
+        public Material MakeParticles() => Make(particles, "Universal Render Pipeline/Particles/Unlit");
+
+        static Material Make(Material template, string fallbackShader)
+        {
+            if (template != null) return new Material(template);
+            var shader = Shader.Find(fallbackShader);
+            if (shader == null)
+            {
+                Debug.LogError($"[CombatStage] No material assigned and shader '{fallbackShader}' is not in this build. Assign Stage Materials on the CombatManager.");
+                shader = Shader.Find("Sprites/Default");
+            }
+            return shader != null ? new Material(shader) : null;
         }
     }
 }
