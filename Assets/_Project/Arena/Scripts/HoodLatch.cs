@@ -6,13 +6,15 @@ namespace CarArena
     public class HoodLatch : MonoBehaviour
     {
         public Rigidbody carBody;
-        public float popAngle = -14f;
+        public float popAngle = -4f;
         [Tooltip("Extra lift at windSpeed (negative = front edge up).")]
-        public float windAngle = -42f;
+        public float windAngle = -7f;
         public float windSpeed = 28f;
-        public float flutter = 7f;
+        public float flutter = 2f;
         public float stiffness = 70f;
         public float damping = 7f;
+        [Tooltip("Hood never opens further than this (keeps the view mostly clear).")]
+        public float maxOpenAngle = -12f;
 
         public bool Popped { get; private set; }
 
@@ -25,7 +27,7 @@ namespace CarArena
         {
             if (Popped) return;
             Popped = true;
-            angVel = -260f;
+            angVel = -80f;
         }
 
         public void ResetLatch()
@@ -48,7 +50,7 @@ namespace CarArena
             angVel += ((target - angle) * stiffness - angVel * damping) * dt;
             angle += angVel * dt;
             if (angle > 0f) { angle = 0f; angVel = -Mathf.Abs(angVel) * 0.3f; }
-            angle = Mathf.Max(angle, -80f);
+            angle = Mathf.Max(angle, maxOpenAngle);
             transform.localRotation = baseRot * Quaternion.Euler(angle, 0f, 0f);
         }
     }

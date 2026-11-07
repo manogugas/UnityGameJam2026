@@ -47,6 +47,12 @@ namespace CarArena
         [Tooltip("With assists on, limit front slip angle to this multiple of the surface's peak slip angle.")]
         public bool steeringAssist = true;
         public float steeringAssistSlip = 1.15f;
+        [Tooltip("How strongly the steering assist counter-steers when the rear slides.")]
+        public float counterSteerGain = 1.5f;
+        [Tooltip("Steering assist stays off this long after the handbrake is released...")]
+        public float handbrakeAssistHold = 0.6f;
+        [Tooltip("...then fades back in over this many seconds.")]
+        public float handbrakeAssistFade = 0.6f;
 
         [Header("Steering")]
         public float maxSteerAngle = 34f;
@@ -65,7 +71,10 @@ namespace CarArena
         public float antiRollFront = 9000f;
         public float antiRollRear = 6000f;
         public float dragCoefficient = 0.42f;
-        public float downforce = 0.6f;
+        [Tooltip("Aero downforce, N per (m/s)^2. Adds grip as speed rises.")]
+        public float downforce = 4f;
+        [Tooltip("Share of downforce on the front axle. >0.5 = sharper turn-in at speed.")]
+        [Range(0f, 1f)] public float downforceFrontShare = 0.54f;
         [Tooltip("Tyre forces are applied this far above the contact patch (less body roll).")]
         public float tyreForceLift = 0.15f;
         [Range(0.5f, 1.5f)] public float gripScale = 1f;
@@ -89,6 +98,7 @@ namespace CarArena
 
         Rigidbody rb;
         float[] tcFactor;
+        float lastHandbrakeTime = -100f;
         CarWheel frontLeft, frontRight, rearLeft, rearRight;
         readonly Dictionary<Collider, SurfaceProfile> surfaceCache = new Dictionary<Collider, SurfaceProfile>();
 
@@ -174,9 +184,20 @@ namespace CarArena
 
             Vector3 v = rb.linearVelocity;
             rb.AddForce(-v * v.magnitude * dragCoefficient);
-            rb.AddForce(-transform.up * downforce * ForwardSpeed * ForwardSpeed);
+            ApplyDownforce();
 
             UpdateRpm(dt);
+        }
+
+        void ApplyDownforce()
+        {
+            if (frontLeft == null || rearLeft == null) return;
+            float total = downforce * ForwardSpeed * ForwardSpeed;
+            Vector3 down = -transform.up;
+            Vector3 front = (frontLeft.transform.position + frontRight.transform.position) * 0.5f;
+            Vector3 rear = (rearLeft.transform.position + rearRight.transform.position) * 0.5f;
+            rb.AddForceAtPosition(down * (total * downforceFrontShare), front);
+            rb.AddForceAtPosition(down * (total * (1f - downforceFrontShare)), rear);
         }
 
         void UpdateSteering(float dt)
@@ -187,18 +208,35 @@ namespace CarArena
             float lockAngle = Mathf.Lerp(maxSteerAngle, highSpeedSteerAngle, Mathf.Abs(ForwardSpeed) / steerSpeedRef);
             float angle = Steer * lockAngle;
 
+            // The handbrake means "I want the car to rotate": the assist would counter-steer that away
+            // (the car snaps back like a bungee). Switch it off while held and fade it back in after release.
+            if (input.Handbrake) lastHandbrakeTime = Time.fixedTime;
+            float assistWeight = Mathf.Clamp01((Time.fixedTime - lastHandbrakeTime - handbrakeAssistHold) / handbrakeAssistFade);
+
             // Steering assist: keep the front tyres near peak slip angle relative to where the front axle is
             // actually travelling. Full keyboard lock then turns as hard as grip allows instead of ploughing,
             // and it lets the wheels follow a slide (auto counter-steer).
-            if (tractionControl && steeringAssist && ForwardSpeed > 5f && frontLeft != null && frontRight != null)
+            if (tractionControl && steeringAssist && assistWeight > 0f && ForwardSpeed > 5f && frontLeft != null && frontRight != null)
             {
+                float raw = angle;
                 Vector3 axle = (frontLeft.transform.position + frontRight.transform.position) * 0.5f;
                 Vector3 v = transform.InverseTransformDirection(rb.GetPointVelocity(axle));
                 float travel = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
                 var surf = frontLeft.Grounded && frontLeft.Surface != null ? frontLeft.Surface : defaultSurface;
-                float limit = (surf != null ? surf.peakSlipAngle : 8f) * steeringAssistSlip;
-                angle = Mathf.Clamp(angle, travel - limit, travel + limit);
+                float peak = surf != null ? surf.peakSlipAngle : 8f;
+                float limit = peak * steeringAssistSlip;
+
+                // If the rear axle is sliding past its peak, shift the window toward counter-steer
+                // (what a driver would do), so the fronts stop pulling the car into a spin.
+                Vector3 rearAxle = (rearLeft.transform.position + rearRight.transform.position) * 0.5f;
+                Vector3 vr = transform.InverseTransformDirection(rb.GetPointVelocity(rearAxle));
+                float rearSlip = Mathf.Atan2(vr.x, Mathf.Max(vr.z, 1f)) * Mathf.Rad2Deg;
+                float excess = Mathf.Max(0f, Mathf.Abs(rearSlip) - peak * 1.1f);
+                float shift = Mathf.Sign(rearSlip) * excess * counterSteerGain;
+
+                angle = Mathf.Clamp(angle, travel - limit + shift, travel + limit + shift);
                 angle = Mathf.Clamp(angle, -maxSteerAngle, maxSteerAngle);
+                angle = Mathf.Lerp(raw, angle, assistWeight);
             }
             foreach (var w in wheels) w.SteerAngle = w.IsFront ? angle : 0f;
         }

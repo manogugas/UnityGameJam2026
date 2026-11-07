@@ -21,7 +21,7 @@ namespace CarArena
         public float dashPushPerSeverity = 0.06f;
         public float maxDashPush = 0.14f;
         public float gloveboxOpenAngle = -75f;
-        public float visorDropAngle = -50f;
+        public float visorDropAngle = -20f;
 
         Vector3 dashBasePos;
         Quaternion dashBaseRot, gloveBaseRot, visorBaseRot;
