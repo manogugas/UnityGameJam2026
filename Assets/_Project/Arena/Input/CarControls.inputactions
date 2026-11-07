@@ -1,0 +1,54 @@
+{
+    "name": "CarControls",
+    "maps": [
+        {
+            "name": "Drive",
+            "id": "4f1c2a7e-6b1d-4c8e-9a51-1d2e3f4a5b60",
+            "actions": [
+                { "name": "Steer", "type": "Value", "id": "a1000001-0000-4000-8000-000000000001", "expectedControlType": "Axis", "processors": "", "interactions": "", "initialStateCheck": true },
+                { "name": "Throttle", "type": "Value", "id": "a1000001-0000-4000-8000-000000000002", "expectedControlType": "Axis", "processors": "", "interactions": "", "initialStateCheck": true },
+                { "name": "Brake", "type": "Value", "id": "a1000001-0000-4000-8000-000000000003", "expectedControlType": "Axis", "processors": "", "interactions": "", "initialStateCheck": true },
+                { "name": "Handbrake", "type": "Button", "id": "a1000001-0000-4000-8000-000000000004", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "LookLeft", "type": "Button", "id": "a1000001-0000-4000-8000-000000000005", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "LookRight", "type": "Button", "id": "a1000001-0000-4000-8000-000000000006", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "LookBack", "type": "Button", "id": "a1000001-0000-4000-8000-000000000007", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "ResetCar", "type": "Button", "id": "a1000001-0000-4000-8000-000000000008", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "CycleDrive", "type": "Button", "id": "a1000001-0000-4000-8000-000000000009", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "Repair", "type": "Button", "id": "a1000001-0000-4000-8000-00000000000a", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false },
+                { "name": "ToggleAssists", "type": "Button", "id": "a1000001-0000-4000-8000-00000000000b", "expectedControlType": "Button", "processors": "", "interactions": "", "initialStateCheck": false }
+            ],
+            "bindings": [
+                { "name": "AD", "id": "b2000001-0000-4000-8000-000000000001", "path": "1DAxis", "interactions": "", "processors": "", "groups": "", "action": "Steer", "isComposite": true, "isPartOfComposite": false },
+                { "name": "negative", "id": "b2000001-0000-4000-8000-000000000002", "path": "<Keyboard>/a", "interactions": "", "processors": "", "groups": "", "action": "Steer", "isComposite": false, "isPartOfComposite": true },
+                { "name": "positive", "id": "b2000001-0000-4000-8000-000000000003", "path": "<Keyboard>/d", "interactions": "", "processors": "", "groups": "", "action": "Steer", "isComposite": false, "isPartOfComposite": true },
+                { "name": "Arrows", "id": "b2000001-0000-4000-8000-000000000004", "path": "1DAxis", "interactions": "", "processors": "", "groups": "", "action": "Steer", "isComposite": true, "isPartOfComposite": false },
+                { "name": "negative", "id": "b2000001-0000-4000-8000-000000000005", "path": "<Keyboard>/leftArrow", "interactions": "", "processors": "", "groups": "", "action": "Steer", "isComposite": false, "isPartOfComposite": true },
+                { "name": "positive", "id": "b2000001-0000-4000-8000-000000000006", "path": "<Keyboard>/rightArrow", "interactions": "", "processors": "", "groups": "", "action": "Steer", "isComposite": false, "isPartOfComposite": true },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000007", "path": "<Gamepad>/leftStick/x", "interactions": "", "processors": "", "groups": "", "action": "Steer", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000008", "path": "<Keyboard>/w", "interactions": "", "processors": "", "groups": "", "action": "Throttle", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000009", "path": "<Keyboard>/upArrow", "interactions": "", "processors": "", "groups": "", "action": "Throttle", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000000a", "path": "<Gamepad>/rightTrigger", "interactions": "", "processors": "", "groups": "", "action": "Throttle", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000000b", "path": "<Keyboard>/s", "interactions": "", "processors": "", "groups": "", "action": "Brake", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000000c", "path": "<Keyboard>/downArrow", "interactions": "", "processors": "", "groups": "", "action": "Brake", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000000d", "path": "<Gamepad>/leftTrigger", "interactions": "", "processors": "", "groups": "", "action": "Brake", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000000e", "path": "<Keyboard>/space", "interactions": "", "processors": "", "groups": "", "action": "Handbrake", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000000f", "path": "<Gamepad>/buttonEast", "interactions": "", "processors": "", "groups": "", "action": "Handbrake", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000010", "path": "<Keyboard>/q", "interactions": "", "processors": "", "groups": "", "action": "LookLeft", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000011", "path": "<Gamepad>/leftShoulder", "interactions": "", "processors": "", "groups": "", "action": "LookLeft", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000012", "path": "<Keyboard>/e", "interactions": "", "processors": "", "groups": "", "action": "LookRight", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000013", "path": "<Gamepad>/rightShoulder", "interactions": "", "processors": "", "groups": "", "action": "LookRight", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000014", "path": "<Keyboard>/leftAlt", "interactions": "", "processors": "", "groups": "", "action": "LookBack", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000015", "path": "<Keyboard>/rightAlt", "interactions": "", "processors": "", "groups": "", "action": "LookBack", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000016", "path": "<Gamepad>/buttonNorth", "interactions": "", "processors": "", "groups": "", "action": "LookBack", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000017", "path": "<Keyboard>/r", "interactions": "", "processors": "", "groups": "", "action": "ResetCar", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000018", "path": "<Gamepad>/select", "interactions": "", "processors": "", "groups": "", "action": "ResetCar", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-000000000019", "path": "<Keyboard>/t", "interactions": "", "processors": "", "groups": "", "action": "CycleDrive", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000001a", "path": "<Gamepad>/dpad/up", "interactions": "", "processors": "", "groups": "", "action": "CycleDrive", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000001b", "path": "<Keyboard>/backspace", "interactions": "", "processors": "", "groups": "", "action": "Repair", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000001c", "path": "<Gamepad>/dpad/down", "interactions": "", "processors": "", "groups": "", "action": "Repair", "isComposite": false, "isPartOfComposite": false },
+                { "name": "", "id": "b2000001-0000-4000-8000-00000000001d", "path": "<Keyboard>/b", "interactions": "", "processors": "", "groups": "", "action": "ToggleAssists", "isComposite": false, "isPartOfComposite": false }
+            ]
+        }
+    ],
+    "controlSchemes": []
+}

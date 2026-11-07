@@ -1,0 +1,321 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+namespace CarArena
+{
+    public enum DriveType { FWD, RWD, AWD }
+
+    /// <summary>
+    /// Semi-realistic car: raycast wheels, power-limited engine with an invisible automatic gearbox,
+    /// S brakes then reverses, FWD/RWD/AWD torque split.
+    /// </summary>
+    [RequireComponent(typeof(Rigidbody))]
+    public class CarController : MonoBehaviour
+    {
+        [Header("References")]
+        public CarInput input;
+        public CarWheel[] wheels;
+        public Transform steeringWheel;
+        public SurfaceProfile defaultSurface;
+
+        [Header("Drivetrain")]
+        public DriveType driveType = DriveType.RWD;
+        [Range(0f, 1f)] public float awdFrontShare = 0.4f;
+        public float maxPowerKW = 115f;
+        [Tooltip("Total torque at the driven wheels in first gear (Nm).")]
+        public float maxWheelTorque = 2600f;
+        public float topSpeedKmh = 190f;
+        public float reverseTopSpeedKmh = 40f;
+        [Tooltip("Engine braking torque per driven wheel when off throttle.")]
+        public float engineBraking = 90f;
+        public float throttleRise = 3.5f;
+        public float throttleFall = 8f;
+
+        [Header("Brakes")]
+        [Tooltip("Total brake torque across all wheels (Nm).")]
+        public float brakeTorque = 8000f;
+        [Range(0f, 1f)] public float frontBrakeBias = 0.65f;
+        public float handbrakeTorque = 3500f;
+        public bool abs = true;
+
+        [Header("Assists")]
+        [Tooltip("Cuts drive torque on a wheel spinning past tcSlipLimit x the surface's peak slip.")]
+        public bool tractionControl = true;
+        public float tcSlipLimit = 2.5f;
+        [Tooltip("With TC on, driven tyres sliding past this combined slip (1 = peak grip) lose power.")]
+        public float stabilitySlipLimit = 1.25f;
+        [Tooltip("With assists on, limit front slip angle to this multiple of the surface's peak slip angle.")]
+        public bool steeringAssist = true;
+        public float steeringAssistSlip = 1.15f;
+
+        [Header("Steering")]
+        public float maxSteerAngle = 34f;
+        public float highSpeedSteerAngle = 9f;
+        [Tooltip("Speed (m/s) at which steering lock reaches the high speed angle.")]
+        public float steerSpeedRef = 35f;
+        public float steerRate = 2.8f;
+        public float steerReturnRate = 4.5f;
+        public float steeringWheelRatio = 13f;
+
+        [Header("Chassis")]
+        public float mass = 1250f;
+        public Vector3 centerOfMass = new Vector3(0f, -0.25f, 0f);
+        [Tooltip("FWD cars carry the engine over the front axle: COM moves forward by this much.")]
+        public float fwdFrontWeightShift = 0.2f;
+        public float antiRollFront = 9000f;
+        public float antiRollRear = 6000f;
+        public float dragCoefficient = 0.42f;
+        public float downforce = 0.6f;
+        [Tooltip("Tyre forces are applied this far above the contact patch (less body roll).")]
+        public float tyreForceLift = 0.15f;
+        [Range(0.5f, 1.5f)] public float gripScale = 1f;
+        [Tooltip("Rear tyre grip relative to front. >1 = more stable, less tail-happy.")]
+        [Range(0.8f, 1.3f)] public float rearGripScale = 1.08f;
+        [Range(4, 32)] public int tyreSubsteps = 16;
+
+        public float ForwardSpeed { get; private set; }
+        public float SpeedKmh => Mathf.Abs(ForwardSpeed) * 3.6f;
+        public bool ReverseGear { get; private set; }
+        public bool ReversingView { get; private set; }
+        public int Gear { get; private set; } = 1;
+        public float Rpm { get; private set; } = 900f;
+        public float ThrottleOut { get; private set; }
+        public float BrakeOut { get; private set; }
+        public float Steer { get; private set; }
+        public Rigidbody Body => rb;
+
+        static readonly float[] GearTopSpeed = { 0f, 11f, 19f, 28f, 38f, 48f, 60f };
+        const float IdleRpm = 900f, RedlineRpm = 6800f;
+
+        Rigidbody rb;
+        float[] tcFactor;
+        CarWheel frontLeft, frontRight, rearLeft, rearRight;
+        readonly Dictionary<Collider, SurfaceProfile> surfaceCache = new Dictionary<Collider, SurfaceProfile>();
+
+        void Awake()
+        {
+            Application.runInBackground = true;
+            rb = GetComponent<Rigidbody>();
+            rb.mass = mass;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
+            ApplyCenterOfMass();
+
+            foreach (var w in wheels)
+            {
+                bool left = transform.InverseTransformPoint(w.transform.position).x < 0f;
+                if (w.IsFront) { if (left) frontLeft = w; else frontRight = w; }
+                else { if (left) rearLeft = w; else rearRight = w; }
+            }
+        }
+
+        public void ApplyCenterOfMass()
+        {
+            if (rb == null) rb = GetComponent<Rigidbody>();
+            rb.centerOfMass = centerOfMass + Vector3.forward * (driveType == DriveType.FWD ? fwdFrontWeightShift : 0f);
+        }
+
+        public SurfaceProfile GetSurface(Collider c)
+        {
+            if (!surfaceCache.TryGetValue(c, out var s))
+            {
+                var tag = c.GetComponentInParent<DrivingSurface>();
+                s = tag != null && tag.profile != null ? tag.profile : defaultSurface;
+                surfaceCache[c] = s;
+            }
+            return s;
+        }
+
+        void Update()
+        {
+            if (input.CycleDrivePressed)
+            {
+                driveType = (DriveType)(((int)driveType + 1) % 3);
+                ApplyCenterOfMass();
+            }
+            if (input.ResetPressed) ResetCar();
+            if (input.ToggleAssistsPressed)
+            {
+                tractionControl = !tractionControl;
+                abs = tractionControl;
+            }
+
+            float dt = Time.deltaTime;
+            foreach (var w in wheels) w.UpdateVisual(dt);
+            if (steeringWheel != null)
+                steeringWheel.localRotation = Quaternion.Euler(0f, 0f, -Steer * maxSteerAngle * steeringWheelRatio * 0.5f);
+        }
+
+        void FixedUpdate()
+        {
+            float dt = Time.fixedDeltaTime;
+            ForwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
+
+            float throttleIn = input.Throttle;
+            float brakeIn = input.Brake;
+
+            // Gear selection: S brakes to a stop, then holding it engages reverse; W does the opposite.
+            if (!ReverseGear && brakeIn > 0.1f && throttleIn < 0.1f && ForwardSpeed < 0.6f) ReverseGear = true;
+            else if (ReverseGear && throttleIn > 0.1f && brakeIn < 0.1f && ForwardSpeed > -0.6f) ReverseGear = false;
+
+            float driveIn = ReverseGear ? brakeIn : throttleIn;
+            float brakePedal = ReverseGear ? throttleIn : brakeIn;
+            ThrottleOut = Mathf.MoveTowards(ThrottleOut, driveIn, (driveIn > ThrottleOut ? throttleRise : throttleFall) * dt);
+            BrakeOut = brakePedal;
+            ReversingView = ReverseGear && (ForwardSpeed < -0.3f || brakeIn > 0.1f);
+
+            UpdateSteering(dt);
+
+            foreach (var w in wheels) w.UpdateSuspension(this, rb, dt);
+            AntiRoll(frontLeft, frontRight, antiRollFront);
+            AntiRoll(rearLeft, rearRight, antiRollRear);
+
+            DriveWheels(dt);
+
+            Vector3 v = rb.linearVelocity;
+            rb.AddForce(-v * v.magnitude * dragCoefficient);
+            rb.AddForce(-transform.up * downforce * ForwardSpeed * ForwardSpeed);
+
+            UpdateRpm(dt);
+        }
+
+        void UpdateSteering(float dt)
+        {
+            float target = input.Steer;
+            bool returning = Mathf.Abs(target) < Mathf.Abs(Steer) || Mathf.Sign(target) != Mathf.Sign(Steer);
+            Steer = Mathf.MoveTowards(Steer, target, (returning ? steerReturnRate : steerRate) * dt);
+            float lockAngle = Mathf.Lerp(maxSteerAngle, highSpeedSteerAngle, Mathf.Abs(ForwardSpeed) / steerSpeedRef);
+            float angle = Steer * lockAngle;
+
+            // Steering assist: keep the front tyres near peak slip angle relative to where the front axle is
+            // actually travelling. Full keyboard lock then turns as hard as grip allows instead of ploughing,
+            // and it lets the wheels follow a slide (auto counter-steer).
+            if (tractionControl && steeringAssist && ForwardSpeed > 5f && frontLeft != null && frontRight != null)
+            {
+                Vector3 axle = (frontLeft.transform.position + frontRight.transform.position) * 0.5f;
+                Vector3 v = transform.InverseTransformDirection(rb.GetPointVelocity(axle));
+                float travel = Mathf.Atan2(v.x, v.z) * Mathf.Rad2Deg;
+                var surf = frontLeft.Grounded && frontLeft.Surface != null ? frontLeft.Surface : defaultSurface;
+                float limit = (surf != null ? surf.peakSlipAngle : 8f) * steeringAssistSlip;
+                angle = Mathf.Clamp(angle, travel - limit, travel + limit);
+                angle = Mathf.Clamp(angle, -maxSteerAngle, maxSteerAngle);
+            }
+            foreach (var w in wheels) w.SteerAngle = w.IsFront ? angle : 0f;
+        }
+
+        void AntiRoll(CarWheel left, CarWheel right, float stiffness)
+        {
+            if (left == null || right == null) return;
+            float diff = left.Compression - right.Compression;
+            Vector3 f = transform.up * diff * stiffness;
+            if (left.Grounded) rb.AddForceAtPosition(f, left.transform.position);
+            if (right.Grounded) rb.AddForceAtPosition(-f, right.transform.position);
+        }
+
+        float FrontShare => driveType == DriveType.FWD ? 1f : driveType == DriveType.RWD ? 0f : awdFrontShare;
+
+        void DriveWheels(float dt)
+        {
+            float frontShare = FrontShare;
+            float wheelRadius = wheels[0].radius;
+            float drivenSpeed = 0f, weight = 0f;
+            foreach (var w in wheels)
+            {
+                float share = w.IsFront ? frontShare : 1f - frontShare;
+                drivenSpeed += Mathf.Abs(w.WheelSpeed) * share;
+                weight += share;
+            }
+            drivenSpeed /= Mathf.Max(weight, 0.001f);
+
+            float limit = (ReverseGear ? reverseTopSpeedKmh : topSpeedKmh) / 3.6f;
+            // P = T * omega  =>  T = P * r / v
+            float torque = Mathf.Min(maxWheelTorque, maxPowerKW * 1000f * wheelRadius / Mathf.Max(drivenSpeed, 0.1f));
+            if (drivenSpeed > limit) torque = 0f;
+            float total = torque * ThrottleOut * (ReverseGear ? -1f : 1f);
+
+            bool hand = input.Handbrake;
+            if (tcFactor == null || tcFactor.Length != wheels.Length)
+            {
+                tcFactor = new float[wheels.Length];
+                for (int k = 0; k < tcFactor.Length; k++) tcFactor[k] = 1f;
+            }
+            for (int i = 0; i < wheels.Length; i++)
+            {
+                var w = wheels[i];
+                float share = w.IsFront ? frontShare : 1f - frontShare;
+                float drive = total * share * 0.5f;
+                if (share > 0f && ThrottleOut < 0.05f) drive -= Mathf.Clamp(w.Omega, -1f, 1f) * engineBraking * share;
+                // Traction control: smoothed per-wheel torque factor (an instant cut oscillates and bogs down).
+                float tcTarget = 1f;
+                if (tractionControl && w.Grounded && w.Surface != null && ThrottleOut > 0.05f &&
+                    Mathf.Sign(w.SlipRatio) == Mathf.Sign(drive))
+                {
+                    float peak = w.Surface.peakSlipRatio;
+                    float over = (Mathf.Abs(w.SlipRatio) - peak * tcSlipLimit) / (peak * 2f);
+                    tcTarget = Mathf.Clamp(1f - over, 0.25f, 1f);
+                }
+                // Stability assist: a driven tyre that is sliding (lateral + longitudinal) loses power,
+                // so throttle can't keep the car in a slide while TC is on.
+                if (tractionControl && w.Grounded && ThrottleOut > 0.05f)
+                {
+                    float slide = (w.CombinedSlip - stabilitySlipLimit) / 0.5f;
+                    tcTarget = Mathf.Min(tcTarget, Mathf.Clamp01(1f - slide));
+                }
+                tcFactor[i] = Mathf.MoveTowards(tcFactor[i], tcTarget, (tcTarget < tcFactor[i] ? 6f : 2.5f) * dt);
+                drive *= tcFactor[i];
+                // Rev limiter for a wheel in the air, so it doesn't land spinning at top speed.
+                if (!w.Grounded && Mathf.Abs(w.WheelSpeed) > Mathf.Abs(ForwardSpeed) + 8f && Mathf.Sign(drive) == Mathf.Sign(w.Omega))
+                    drive = 0f;
+
+                float brake = BrakeOut * brakeTorque * 0.5f * (w.IsFront ? frontBrakeBias : 1f - frontBrakeBias);
+                bool wheelAbs = abs;
+                if (hand && !w.IsFront)
+                {
+                    brake += handbrakeTorque;
+                    drive = 0f;
+                    wheelAbs = false;
+                }
+                float grip = gripScale * (w.IsFront ? 1f : rearGripScale);
+                w.UpdateTyre(rb, transform, dt, drive, brake, wheelAbs, grip, tyreSubsteps, tyreForceLift);
+            }
+        }
+
+        void UpdateRpm(float dt)
+        {
+            float speed = 0f, weight = 0f;
+            float frontShare = FrontShare;
+            foreach (var w in wheels)
+            {
+                float share = w.IsFront ? frontShare : 1f - frontShare;
+                speed += Mathf.Abs(w.WheelSpeed) * share;
+                weight += share;
+            }
+            speed /= Mathf.Max(weight, 0.001f);
+
+            if (ReverseGear) Gear = 1;
+            else
+            {
+                if (Gear < GearTopSpeed.Length - 1 && speed > GearTopSpeed[Gear] * 0.92f) Gear++;
+                else if (Gear > 1 && speed < GearTopSpeed[Gear - 1] * 0.6f) Gear--;
+            }
+            float target = IdleRpm + speed / GearTopSpeed[Gear] * (RedlineRpm - IdleRpm);
+            target = Mathf.Max(target, IdleRpm + ThrottleOut * (Gear == 1 ? 2200f : 600f));
+            target = Mathf.Min(target, RedlineRpm + 200f);
+            Rpm = Mathf.Lerp(Rpm, target, 1f - Mathf.Exp(-dt * 12f));
+        }
+
+        public void ResetCar()
+        {
+            Vector3 fwd = Vector3.ProjectOnPlane(transform.forward, Vector3.up);
+            if (fwd.sqrMagnitude < 0.01f) fwd = Vector3.forward;
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.position = rb.position + Vector3.up * 1.2f;
+            rb.rotation = Quaternion.LookRotation(fwd.normalized, Vector3.up);
+            transform.SetPositionAndRotation(rb.position, rb.rotation);
+            foreach (var w in wheels) w.ResetState();
+            ReverseGear = false;
+            ThrottleOut = 0f;
+        }
+    }
+}
