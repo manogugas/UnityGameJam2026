@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/_Project/Scenes/CasinoCombat.unity
-    guid: a4f5d894846d1714481f82aa0ad48ae0
+    path: Assets/_Project/Arena/Scenes/ArenaTest.unity
+    guid: 341e773ab042fb04ca0454f6f294996c
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}

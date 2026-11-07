@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace CarArena
 {
-    /// <summary>Procedural engine, tyre squeal, gravel rumble and impact thumps (no audio assets).</summary>
+    /// <summary>Procedural engine (EngineSynth), tyre squeal, gravel rumble and impact thumps (no audio assets).</summary>
     [RequireComponent(typeof(AudioSource))]
     public class CarAudio : MonoBehaviour
     {
@@ -10,11 +10,19 @@ namespace CarArena
         public CarDamage damage;
         [Range(0f, 1f)] public float volume = 0.35f;
 
+        [Header("Engine")]
+        public EngineLayout engineLayout = EngineLayout.V8Crossplane;
+        [Range(0f, 2f)] public float engineVolume = 1f;
+        [Tooltip("Rev limiter rpm for the sound (combustions get cut above this).")]
+        public float limiterRpm = 6700f;
+        [Range(0f, 1f)] public float stereoWidth = 0.35f;
+
         AudioSource source;
         int sampleRate;
         volatile float rpm = 900f, load, squeal, gravel, impactKick;
-        double phase, subPhase, squealPhase, vibratoPhase, thumpPhase;
-        float lpEngine, lpGravel, lpGravel2, lpImpact, impactEnv, squealAmp, gravelAmp;
+        double squealPhase, vibratoPhase, thumpPhase;
+        float lpGravel, lpGravel2, lpImpact, impactEnv, squealAmp, gravelAmp, rpmSmooth = 900f, loadSmooth;
+        volatile EngineSynth engine;
         uint rng = 2463534242u;
 
         void Awake()
@@ -25,6 +33,7 @@ namespace CarArena
             source.loop = true;
             source.spatialBlend = 0f;
             source.playOnAwake = false;
+            engine = new EngineSynth(engineLayout, sampleRate);
         }
 
         void OnEnable()
@@ -42,6 +51,7 @@ namespace CarArena
 
         void Update()
         {
+            if (engine == null || engine.Layout != engineLayout) engine = new EngineSynth(engineLayout, sampleRate);
             rpm = car.Rpm;
             load = car.ThrottleOut;
             float sq = 0f, gr = 0f;
@@ -66,22 +76,24 @@ namespace CarArena
         {
             if (sampleRate <= 0) return;
             double dt = 1.0 / sampleRate;
+            var synth = engine;
             float r = rpm, l = load, sq = squeal, gr = gravel;
             if (impactKick > 0f) { impactEnv = Mathf.Max(impactEnv, impactKick); impactKick = 0f; }
-            double f = r / 60.0 * 2.0;
-            float engineCut = 0.08f + l * 0.12f + r / 7000f * 0.1f;
             float impactDecay = Mathf.Exp(-6f / sampleRate);
+            float limiter = limiterRpm, width = stereoWidth, engVol = engineVolume;
 
             for (int i = 0; i < data.Length; i += channels)
             {
-                phase += f * dt; if (phase >= 1.0) phase -= 1.0;
-                subPhase += f * 0.5 * dt; if (subPhase >= 1.0) subPhase -= 1.0;
-                float saw = (float)(phase * 2.0 - 1.0);
-                float pulse = phase < 0.3 ? 1f : -0.4f;
-                float sub = subPhase < 0.5 ? 0.6f : -0.6f;
                 float n = Noise();
-                float engine = (saw * 0.45f + pulse * 0.35f + sub * 0.3f + n * 0.12f * l) * (0.4f + 0.6f * l);
-                lpEngine += (engine - lpEngine) * engineCut;
+
+                // Smooth control values per sample so the engine never steps or clicks.
+                rpmSmooth += (r - rpmSmooth) * 0.002f;
+                loadSmooth += (l - loadSmooth) * 0.003f;
+                float engL = 0f, engR = 0f;
+                if (synth != null) synth.Render(rpmSmooth, loadSmooth, limiter, out engL, out engR);
+                float engMid = (engL + engR) * 0.5f, engSide = (engL - engR) * 0.5f * width;
+                engL = (engMid + engSide) * engVol;
+                engR = (engMid - engSide) * engVol;
 
                 // Tyre squeal: clean tone with a slow vibrato, pitch rising with slide. Amplitude is
                 // smoothed per sample so it fades instead of clicking.
@@ -103,8 +115,16 @@ namespace CarArena
                 float impactS = (Mathf.Sin((float)(thumpPhase * 6.283185)) * 0.9f + lpImpact * 1.4f) * impactEnv;
                 impactEnv *= impactDecay;
 
-                float s = Mathf.Clamp((lpEngine * 0.7f + squealS + gravelS + impactS) * volume, -1f, 1f);
-                for (int c = 0; c < channels; c++) data[i + c] = s;
+                float fx = squealS + gravelS + impactS;
+                float sl = Mathf.Clamp((engL + fx) * volume, -1f, 1f);
+                float sr = Mathf.Clamp((engR + fx) * volume, -1f, 1f);
+                if (channels == 1) data[i] = (sl + sr) * 0.5f;
+                else
+                {
+                    data[i] = sl;
+                    data[i + 1] = sr;
+                    for (int c = 2; c < channels; c++) data[i + c] = (sl + sr) * 0.5f;
+                }
             }
         }
     }

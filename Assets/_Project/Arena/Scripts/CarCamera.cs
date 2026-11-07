@@ -57,8 +57,12 @@ namespace CarArena
             else if (input.LookLeft && !input.LookRight) target = -sideLookAngle;
             else if (input.LookRight && !input.LookLeft) target = sideLookAngle;
 
-            yaw = Mathf.SmoothDampAngle(yaw, target, ref yawVel, lookSmoothTime);
-            float backAmount = Mathf.Clamp01(Mathf.InverseLerp(60f, backLookAngle, yaw));
+            // Plain (not shortest-angle) smoothing inside -180..180, so the head turns back through the
+            // front like a person would. With SmoothDampAngle, going from looking back (172) to looking
+            // left (-80) wrapped yaw to ~280, which kept the look-back head offset on: the view got stuck
+            // in the middle of the car.
+            yaw = Mathf.SmoothDamp(Mathf.Clamp(yaw, -180f, 180f), target, ref yawVel, lookSmoothTime);
+            float backAmount = Mathf.Clamp01(Mathf.InverseLerp(100f, backLookAngle, yaw));
 
             Vector3 lean = Vector3.ClampMagnitude(new Vector3(-smoothAccel.x, -smoothAccel.y * 0.3f, -smoothAccel.z) * gLean, maxLean);
             float roll = Mathf.Clamp(smoothAccel.x * rollPerAccel, -6f, 6f);

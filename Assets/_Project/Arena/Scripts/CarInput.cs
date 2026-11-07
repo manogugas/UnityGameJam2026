@@ -15,6 +15,7 @@ namespace CarArena
         [Range(0f, 1f)] public float overrideThrottle;
         [Range(0f, 1f)] public float overrideBrake;
         public bool overrideHandbrake;
+        public bool overrideLookLeft, overrideLookRight, overrideLookBack;
 
         InputActionMap map;
         InputAction steer, throttle, brake, handbrake, lookLeft, lookRight, lookBack, resetCar, cycleDrive, repair, toggleAssists;
@@ -42,9 +43,9 @@ namespace CarArena
         public float Throttle => overrideDriving ? overrideThrottle : Mathf.Clamp01(throttle.ReadValue<float>());
         public float Brake => overrideDriving ? overrideBrake : Mathf.Clamp01(brake.ReadValue<float>());
         public bool Handbrake => overrideDriving ? overrideHandbrake : handbrake.IsPressed();
-        public bool LookLeft => lookLeft.IsPressed();
-        public bool LookRight => lookRight.IsPressed();
-        public bool LookBack => lookBack.IsPressed();
+        public bool LookLeft => overrideDriving ? overrideLookLeft : lookLeft.IsPressed();
+        public bool LookRight => overrideDriving ? overrideLookRight : lookRight.IsPressed();
+        public bool LookBack => overrideDriving ? overrideLookBack : lookBack.IsPressed();
         public bool ResetPressed => resetCar.WasPressedThisFrame();
         public bool CycleDrivePressed => cycleDrive.WasPressedThisFrame();
         public bool RepairPressed => repair.WasPressedThisFrame();
