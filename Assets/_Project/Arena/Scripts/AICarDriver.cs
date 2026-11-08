@@ -16,7 +16,7 @@ namespace CarArena
     [RequireComponent(typeof(CarController))]
     public class AICarDriver : MonoBehaviour
     {
-        public enum State { Hunt, Charge, Push, BackOff, Reposition, Unstuck, Idle }
+        public enum State { Hunt, Charge, Push, BackOff, Reposition, Unstuck, Idle, Wait, Entering }
 
         public DriverArchetype archetype = DriverArchetype.Rammer;
         public CarController target;
@@ -60,7 +60,7 @@ namespace CarArena
         float stateTime, stuckTime, flipTime, backOffDuration;
         State afterBackOff = State.Reposition;
         float flankSide, personality;
-        Vector3 repositionPoint;
+        Vector3 repositionPoint, entryPoint;
         readonly RaycastHit[] hits = new RaycastHit[8];
         CarDamage damage;
         CarHealth lastAttacker;
@@ -95,11 +95,21 @@ namespace CarArena
             chargeDistance *= personality;
         }
 
+        /// <summary>Sit still with the brakes on (waiting behind a closed gate).</summary>
+        public void Hold() => Enter(State.Wait);
+
+        /// <summary>Drive through an opened gate to a point inside the arena, then start fighting.</summary>
+        public void DriveIn(Vector3 point)
+        {
+            entryPoint = point;
+            Enter(State.Entering);
+        }
+
         public void SetTarget(CarController newTarget)
         {
             target = newTarget;
             targetHealth = target != null ? target.GetComponent<CarHealth>() : null;
-            Enter(State.Hunt);
+            if (state != State.Wait && state != State.Entering) Enter(State.Hunt);
         }
 
         void Start()
@@ -124,7 +134,8 @@ namespace CarArena
         {
             if (director == null) return;
             bool targetGone = targetHealth == null || targetHealth.IsDead;
-            bool busy = state == State.Charge || state == State.Push || state == State.BackOff;
+            bool busy = state == State.Charge || state == State.Push || state == State.BackOff
+                        || state == State.Wait || state == State.Entering;
             if (busy && !targetGone) return;
 
             CarHealth best = null;
@@ -167,7 +178,9 @@ namespace CarArena
                 retargetTimer = retargetInterval * personality;
             }
 
-            if (target == null || (targetHealth != null && targetHealth.IsDead))
+            if (state == State.Wait) { Drive(0f, 0f, 0f); input.overrideHandbrake = true; return; }
+
+            if (state != State.Entering && (target == null || (targetHealth != null && targetHealth.IsDead)))
             {
                 if (state != State.Idle && state != State.Reposition) Enter(State.Reposition);
                 if (state == State.Reposition && stateTime > 4f) Enter(State.Idle);
@@ -229,6 +242,12 @@ namespace CarArena
                 case State.Unstuck:
                     reverse = true;
                     if (stateTime > 1.3f) Enter(State.Hunt);
+                    break;
+
+                case State.Entering:
+                    aim = entryPoint;
+                    throttle = 0.6f;
+                    if (Flat(entryPoint - myPos).magnitude < 7f || stateTime > 12f) Enter(target != null ? State.Hunt : State.Idle);
                     break;
 
                 case State.Idle:

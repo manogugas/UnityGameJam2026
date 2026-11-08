@@ -37,7 +37,7 @@ namespace CarArena
         [Range(0f, 1f)] public float idleExcitement = 0.08f;
 
         [Header("Sound")]
-        [Range(0f, 1f)] public float volume = 0.18f;
+        [Range(0f, 2f)] public float volume = 0.4f;
 
         class Chunk { public Transform t; public float phase, speed; public Vector3 basePos; }
 
@@ -45,13 +45,13 @@ namespace CarArena
         float excitement;
         volatile float roar;
         int sampleRate;
-        float b1, b2, b3, l1, l2, swell, swellTarget;
-        uint rng = 0x2545F491u;
+        volatile CrowdSynth crowdSynth;
 
         void Start()
         {
             Build();
             sampleRate = AudioSettings.outputSampleRate;
+            crowdSynth = new CrowdSynth(sampleRate);
             var src = GetComponent<AudioSource>();
             src.clip = AudioClip.Create("silence", sampleRate, 1, sampleRate, false);
             src.loop = true;
@@ -162,33 +162,24 @@ namespace CarArena
             }
         }
 
-        float Noise()
-        {
-            rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5;
-            return (rng & 0xFFFFFF) / 8388607.5f - 1f;
-        }
-
-        // Crowd roar: many voices = band-limited noise (roughly the voice range) with a slow, irregular
-        // swell. Low-passed hard so it reads as a distant roar rather than hiss.
         void OnAudioFilterRead(float[] data, int channels)
         {
-            if (sampleRate <= 0) return;
-            float r = roar, vol = volume;
-            float kSwell = 1f / (sampleRate * 0.4f);
+            var synth = crowdSynth;
+            if (synth == null) return;
+            synth.excitement = roar;
+            float vol = volume;
             for (int i = 0; i < data.Length; i += channels)
             {
-                if ((i & 1023) == 0) swellTarget = 0.6f + 0.4f * Noise();
-                swell += (swellTarget - swell) * kSwell * 60f;
-
-                float n = Noise();
-                b1 += (n - b1) * 0.12f;          // remove the hiss
-                b2 += (b1 - b2) * 0.12f;
-                l1 += (b2 - l1) * 0.02f;         // and the rumble below the voice range
-                b3 = b2 - l1;
-                l2 += (b3 - l2) * 0.35f;
-                float s = l2 * (0.25f + 2.2f * r) * swell * vol * 3f;
-                s = Mathf.Clamp(s, -1f, 1f);
-                for (int c = 0; c < channels; c++) data[i + c] = s;
+                synth.Render(out float l, out float r);
+                l = Mathf.Clamp(l * vol, -1f, 1f);
+                r = Mathf.Clamp(r * vol, -1f, 1f);
+                if (channels == 1) data[i] = (l + r) * 0.5f;
+                else
+                {
+                    data[i] = l;
+                    data[i + 1] = r;
+                    for (int c = 2; c < channels; c++) data[i + c] = (l + r) * 0.5f;
+                }
             }
         }
     }

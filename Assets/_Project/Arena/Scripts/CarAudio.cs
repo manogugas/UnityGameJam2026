@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace CarArena
 {
-    /// <summary>Procedural engine (EngineSynth), tyre squeal, gravel rumble and impact thumps (no audio assets).</summary>
+    /// <summary>Procedural engine (EngineSynth), tyre squeal, gravel rumble, crashes (ImpactSynth) and the steam
+    /// hiss of a wrecked engine. No audio assets.</summary>
     [RequireComponent(typeof(AudioSource))]
     public class CarAudio : MonoBehaviour
     {
@@ -23,9 +24,12 @@ namespace CarArena
 
         AudioSource source;
         int sampleRate;
-        volatile float rpm = 900f, load, squeal, gravel, impactKick;
-        double squealPhase, vibratoPhase, thumpPhase;
-        float lpGravel, lpGravel2, lpImpact, impactEnv, squealAmp, gravelAmp, rpmSmooth = 900f, loadSmooth;
+        volatile float rpm = 900f, load, squeal, gravel, steam;
+        double squealPhase, vibratoPhase;
+        float lpGravel, lpGravel2, squealAmp, gravelAmp, rpmSmooth = 900f, loadSmooth;
+        float steamSmooth, steamHp, steamIn, steamLp;
+        float deadTime = -1f;
+        ImpactSynth crashes;
         volatile EngineSynth engine;
         volatile float gainL = 1f, gainR = 1f;
         Transform listener;
@@ -41,6 +45,7 @@ namespace CarArena
             source.spatialBlend = 0f;
             source.playOnAwake = false;
             engine = new EngineSynth(engineLayout, sampleRate);
+            crashes = new ImpactSynth(sampleRate, (uint)Random.Range(1, int.MaxValue));
         }
 
         void OnEnable()
@@ -54,7 +59,7 @@ namespace CarArena
             if (damage != null) damage.Impact -= OnImpact;
         }
 
-        void OnImpact(ImpactInfo i) => impactKick = Mathf.Max(impactKick, 0.35f + i.severity);
+        void OnImpact(ImpactInfo i) => crashes?.Trigger(0.15f + i.severity * 0.85f);
 
         void Update()
         {
@@ -70,6 +75,10 @@ namespace CarArena
                 else sq = Mathf.Max(sq, slide);
             }
             squeal = sq;
+
+            // Wrecked: radiator steam, loud at first and dying away over ~10 s.
+            if (car.EngineDead) { if (deadTime < 0f) deadTime = Time.time; steam = Mathf.Clamp01(1f - (Time.time - deadTime) / 10f) * 0.8f + 0.1f; }
+            else { deadTime = -1f; steam = 0f; }
             gravel = gr;
             UpdateSpatial();
         }
@@ -104,8 +113,8 @@ namespace CarArena
             double dt = 1.0 / sampleRate;
             var synth = engine;
             float r = rpm, l = load, sq = squeal, gr = gravel;
-            if (impactKick > 0f) { impactEnv = Mathf.Max(impactEnv, impactKick); impactKick = 0f; }
-            float impactDecay = Mathf.Exp(-6f / sampleRate);
+            var crash = crashes;
+            float st = steam;
             float limiter = limiterRpm, width = stereoWidth, engVol = engineVolume;
             float gL = gainL, gR = gainR;
 
@@ -137,12 +146,16 @@ namespace CarArena
                 lpGravel2 += (lpGravel - lpGravel2) * 0.025f;
                 float gravelS = lpGravel2 * gravelAmp * 5f;
 
-                thumpPhase += 48.0 * dt; if (thumpPhase >= 1.0) thumpPhase -= 1.0;
-                lpImpact += (n - lpImpact) * 0.2f;
-                float impactS = (Mathf.Sin((float)(thumpPhase * 6.283185)) * 0.9f + lpImpact * 1.4f) * impactEnv;
-                impactEnv *= impactDecay;
+                float impactS = crash != null ? crash.Render() * 1.3f : 0f;
 
-                float fx = squealS + gravelS + impactS;
+                // Steam: high-passed noise with a slow flutter, smoothed in and out.
+                steamSmooth += (st - steamSmooth) * 0.0005f;
+                float sn = Noise();
+                steamHp = 0.85f * (steamHp + sn - steamIn); steamIn = sn;
+                steamLp += (steamHp - steamLp) * 0.5f;
+                float steamS = steamSmooth > 0.001f ? steamLp * steamSmooth * 0.18f : 0f;
+
+                float fx = squealS + gravelS + impactS + steamS;
                 float sl = Mathf.Clamp((engL + fx) * volume * gL, -1f, 1f);
                 float sr = Mathf.Clamp((engR + fx) * volume * gR, -1f, 1f);
                 if (channels == 1) data[i] = (sl + sr) * 0.5f;

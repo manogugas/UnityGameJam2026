@@ -30,10 +30,17 @@ namespace CarArena.EditorTools
         const float StandRowDepth = 1.3f;
         const float StandFirstTop = 6.6f;
         const float StandRise = 0.75f;
+        // Gates: openings in the south and west walls with a tunnel through the stands behind them.
+        const float GateHalfWidth = 3.5f;
+        const float GateHeight = 5f;
+        const float TunnelLength = 18f;
+        static readonly Vector3[] GateSides = { Vector3.back, Vector3.left };
+        static readonly System.Collections.Generic.List<ArenaGate> builtGates = new System.Collections.Generic.List<ArenaGate>();
 
         static Material mSand, mAsphalt, mBank, mConcrete, mRamp, mObstacle, mTyre, mCrate, mWreck;
         static Material mStone, mStone2, mGate, mClothRed, mClothPurple, mSkin;
         static Material[] mCrowd;
+        static Material mHealthFill, mWarnLamp;
         static Material mBody, mPanel, mTrim, mInterior, mSeat, mGlass, mCrack, mMirror, mGauge, mBed, mGaugeFace, mNeedle, mRedline;
         static Mesh unitCube;
         static PhysicsMaterial carPhysMat;
@@ -72,16 +79,18 @@ namespace CarArena.EditorTools
             BuildEnvironment();
             BuildArena(asphalt, sand);
             var car = BuildCar(asphalt);
-            car.transform.SetPositionAndRotation(new Vector3(0f, 0.9f, -42f), Quaternion.identity);
+            var playerGate = builtGates[0];
+            car.transform.SetPositionAndRotation(playerGate.spawnPoint.position, playerGate.spawnPoint.rotation);
             PrefabUtility.SaveAsPrefabAssetAndConnect(car, PrefabPath, InteractionMode.AutomatedAction);
 
             var enemyPrefabs = new[]
             {
-                BuildEnemyPrefab(asphalt, DriverArchetype.Rammer, "Rammer", new Color(0.62f, 0.16f, 0.12f), 1250f, 90f, 125f, 2700f),
-                BuildEnemyPrefab(asphalt, DriverArchetype.Flanker, "Flanker", new Color(0.85f, 0.65f, 0.12f), 1100f, 75f, 120f, 2500f),
-                BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Bruiser", new Color(0.2f, 0.24f, 0.18f), 1900f, 170f, 165f, 3600f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Rammer, "Rammer", new Color(0.62f, 0.16f, 0.12f), 1250f, 60f, 125f, 2700f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Flanker, "Flanker", new Color(0.85f, 0.65f, 0.12f), 1100f, 50f, 120f, 2500f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Bruiser", new Color(0.2f, 0.24f, 0.18f), 1900f, 110f, 165f, 3600f),
             };
-            BuildDirector(car, enemyPrefabs);
+            var director = BuildDirector(car, enemyPrefabs);
+            BuildIntro(car, playerGate, director);
 
             EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
             AssetDatabase.SaveAssets();
@@ -115,6 +124,13 @@ namespace CarArena.EditorTools
             mClothRed = Mat("ClothRed", new Color(0.62f, 0.08f, 0.06f), 0.1f);
             mClothPurple = Mat("ClothPurple", new Color(0.36f, 0.1f, 0.42f), 0.1f);
             mSkin = Mat("CrowdSkin", new Color(0.86f, 0.66f, 0.52f), 0.2f);
+            mHealthFill = Mat("HealthFill", new Color(0.25f, 1f, 0.3f), 0.5f);
+            mHealthFill.EnableKeyword("_EMISSION");
+            mHealthFill.SetColor("_EmissionColor", new Color(0.25f, 1f, 0.3f));
+            mHealthFill.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+            mWarnLamp = Mat("WarningLamp", new Color(0.12f, 0.1f, 0.08f), 0.6f);
+            mWarnLamp.EnableKeyword("_EMISSION");
+            mWarnLamp.SetColor("_EmissionColor", Color.black);
             mCrowd = new[]
             {
                 Mat("CrowdRed", new Color(0.7f, 0.2f, 0.18f), 0.1f),
@@ -300,14 +316,29 @@ namespace CarArena.EditorTools
             foreach (var dir in new[] { Vector3.forward, Vector3.right, Vector3.back, Vector3.left })
             {
                 var rot = Quaternion.LookRotation(-dir);
-                Prim(PrimitiveType.Cube, "Wall", wall, dir * (ArenaHalf + 1f) + Vector3.up * (WallHeight * 0.5f),
-                    new Vector3(outer * 2f, WallHeight, 2f), mStone2, true, rot);
+                Vector3 along = Vector3.Cross(Vector3.up, dir);
+                Vector3 centre = dir * (ArenaHalf + 1f);
+                if (System.Array.IndexOf(GateSides, dir) >= 0)
+                {
+                    // Wall with an opening for the gate: left part, right part and a lintel above.
+                    float segLen = outer - GateHalfWidth, segMid = (outer + GateHalfWidth) * 0.5f;
+                    foreach (float sgn in new[] { -1f, 1f })
+                        Prim(PrimitiveType.Cube, "Wall", wall, centre + along * (sgn * segMid) + Vector3.up * (WallHeight * 0.5f),
+                            new Vector3(segLen, WallHeight, 2f), mStone2, true, rot);
+                    Prim(PrimitiveType.Cube, "WallLintel", wall, centre + Vector3.up * ((GateHeight + WallHeight) * 0.5f),
+                        new Vector3(GateHalfWidth * 2f, WallHeight - GateHeight, 2f), mStone2, true, rot);
+                }
+                else
+                {
+                    Prim(PrimitiveType.Cube, "Wall", wall, centre + Vector3.up * (WallHeight * 0.5f),
+                        new Vector3(outer * 2f, WallHeight, 2f), mStone2, true, rot);
+                }
                 Prim(PrimitiveType.Cube, "Parapet", wall, dir * (ArenaHalf + 0.3f) + Vector3.up * (WallHeight + 0.4f),
                     new Vector3(outer * 2f, 0.8f, 0.6f), mStone, false, rot);
             }
-            // Gates on the flat sides (south, west): the enemies' entrances. Visual only, the wall stays solid.
-            Gate(arena, Vector3.back);
-            Gate(arena, Vector3.left);
+            // Gates on the flat sides (south, west): the player's and the enemies' entrances.
+            builtGates.Clear();
+            foreach (var side in GateSides) builtGates.Add(Gate(arena, side, asphalt));
 
             BuildStands(arena);
 
@@ -407,15 +438,53 @@ namespace CarArena.EditorTools
 
         // ---------------------------------------------------------------- stands
 
-        static void Gate(Transform parent, Vector3 n)
+        /// <summary>
+        /// Gate with a working portcullis and a tunnel behind it through the stands. Local +Z points into
+        /// the arena; the wall occupies local z 0..-2 and the tunnel continues outward from there.
+        /// </summary>
+        static ArenaGate Gate(Transform parent, Vector3 n, SurfaceProfile floorSurface)
         {
-            var g = Empty("Gate", parent, n * (ArenaHalf - 0.06f), Quaternion.LookRotation(-n)).transform;
-            Prim(PrimitiveType.Cube, "Doorway", g, new Vector3(0f, 2.4f, 0f), new Vector3(7f, 4.8f, 0.1f), mGate);
+            var g = Empty("Gate", parent, n * ArenaHalf, Quaternion.LookRotation(-n)).transform;
+            float w = GateHalfWidth;
             for (int s = -1; s <= 1; s += 2)
-                Prim(PrimitiveType.Cube, "Jamb", g, new Vector3(4.1f * s, 2.9f, -0.25f), new Vector3(1.2f, 5.8f, 0.6f), mStone);
-            Prim(PrimitiveType.Cube, "Lintel", g, new Vector3(0f, 5.4f, -0.3f), new Vector3(9.6f, 1.1f, 0.7f), mStone);
-            for (int b = 0; b < 6; b++) // portcullis bars
-                Prim(PrimitiveType.Cube, "Bar", g, new Vector3(-3f + b * 1.2f, 2.4f, -0.08f), new Vector3(0.12f, 4.8f, 0.12f), mTrim);
+                Prim(PrimitiveType.Cube, "Jamb", g, new Vector3((w + 0.6f) * s, 2.9f, 0.2f), new Vector3(1.2f, 5.8f, 0.6f), mStone);
+            Prim(PrimitiveType.Cube, "Lintel", g, new Vector3(0f, GateHeight + 0.45f, 0.25f), new Vector3(2f * w + 2.6f, 1.1f, 0.7f), mStone);
+            // Gatehouse above the gate: hides the raised portcullis.
+            Prim(PrimitiveType.Cube, "Gatehouse", g, new Vector3(0f, WallHeight + 2.8f, -1f), new Vector3(2f * w + 3f, 5.6f, 2.4f), mStone2);
+            Prim(PrimitiveType.Cube, "GatehouseBanner", g, new Vector3(0f, WallHeight + 2.6f, 0.22f), new Vector3(3f, 4.4f, 0.06f), mClothRed);
+
+            // Tunnel through the stands.
+            float zMid = -2f - TunnelLength * 0.5f;
+            var floor = Prim(PrimitiveType.Cube, "TunnelFloor", g, new Vector3(0f, -0.1f, zMid), new Vector3(2f * w + 1f, 0.2f, TunnelLength + 0.2f), mAsphalt, true);
+            Tag(floor, floorSurface);
+            for (int s = -1; s <= 1; s += 2)
+                Prim(PrimitiveType.Cube, "TunnelWall", g, new Vector3((w + 0.25f) * s, GateHeight * 0.5f, zMid), new Vector3(0.5f, GateHeight, TunnelLength), mStone2, true);
+            Prim(PrimitiveType.Cube, "TunnelRoof", g, new Vector3(0f, GateHeight + 0.25f, zMid), new Vector3(2f * w + 1f, 0.5f, TunnelLength), mStone2, true);
+            Prim(PrimitiveType.Cube, "TunnelEnd", g, new Vector3(0f, GateHeight * 0.5f, -2f - TunnelLength - 0.25f), new Vector3(2f * w + 1f, GateHeight, 0.5f), mGate, true);
+            var lamp = Empty("TunnelLight", g, new Vector3(0f, GateHeight - 0.6f, -2f - TunnelLength * 0.45f)).AddComponent<Light>();
+            lamp.type = LightType.Point;
+            lamp.color = new Color(1f, 0.7f, 0.4f);
+            lamp.range = 14f;
+            lamp.intensity = 3f;
+
+            // Portcullis: a kinematic body so cars collide with it properly while it moves.
+            var port = Empty("Portcullis", g, new Vector3(0f, GateHeight * 0.5f, -1f));
+            var prb = port.AddComponent<Rigidbody>();
+            prb.isKinematic = true;
+            prb.interpolation = RigidbodyInterpolation.Interpolate;
+            var pcol = port.AddComponent<BoxCollider>();
+            pcol.size = new Vector3(2f * w, GateHeight, 0.3f);
+            for (int b = 0; b < 7; b++)
+                Prim(PrimitiveType.Cube, "Bar", port.transform, new Vector3(-w + 0.25f + b * (2f * w - 0.5f) / 6f, 0f, 0f), new Vector3(0.14f, GateHeight, 0.14f), mTrim);
+            for (int b = -1; b <= 1; b++)
+                Prim(PrimitiveType.Cube, "CrossBar", port.transform, new Vector3(0f, b * 1.6f, 0.05f), new Vector3(2f * w, 0.14f, 0.12f), mTrim);
+
+            var gate = g.gameObject.AddComponent<ArenaGate>();
+            gate.portcullis = port.transform;
+            gate.openHeight = GateHeight + 0.3f;
+            gate.spawnPoint = Empty("SpawnPoint", g, new Vector3(0f, 0.9f, -2f - TunnelLength + 4.5f)).transform;
+            gate.entryPoint = Empty("EntryPoint", g, new Vector3(0f, 0.9f, 16f)).transform;
+            return gate;
         }
 
         /// <summary>Tiered stone seating on all four sides, a colonnade with banners on top, and the emperor's box.</summary>
@@ -434,8 +503,23 @@ namespace CarArena.EditorTools
                     float dist = first + StandRowDepth * (i + 0.5f);
                     float top = StandFirstTop + StandRise * i;
                     float len = 2f * (first + StandRowDepth * (i + 1));
-                    Prim(PrimitiveType.Cube, "Row" + i, side, n * dist + Vector3.up * (top * 0.5f),
-                        new Vector3(len, top, StandRowDepth), i % 2 == 0 ? mStone : mStone2, false, rot);
+                    var rowMat = i % 2 == 0 ? mStone : mStone2;
+                    if (System.Array.IndexOf(GateSides, n) >= 0)
+                    {
+                        // Leave room for the gate tunnel: two halves plus a block above the tunnel roof.
+                        float gap = GateHalfWidth + 0.5f, halfLen = len * 0.5f - gap, mid = (len * 0.5f + gap) * 0.5f;
+                        foreach (float sgn in new[] { -1f, 1f })
+                            Prim(PrimitiveType.Cube, "Row" + i, side, n * dist + along * (sgn * mid) + Vector3.up * (top * 0.5f),
+                                new Vector3(halfLen, top, StandRowDepth), rowMat, false, rot);
+                        float roof = GateHeight + 0.5f;
+                        Prim(PrimitiveType.Cube, "Row" + i + "Over", side, n * dist + Vector3.up * ((top + roof) * 0.5f),
+                            new Vector3(2f * gap, top - roof, StandRowDepth), rowMat, false, rot);
+                    }
+                    else
+                    {
+                        Prim(PrimitiveType.Cube, "Row" + i, side, n * dist + Vector3.up * (top * 0.5f),
+                            new Vector3(len, top, StandRowDepth), rowMat, false, rot);
+                    }
                 }
                 float backDist = first + StandRowDepth * StandRows + 0.75f;
                 float backTop = lastTop + 8f;
@@ -486,29 +570,39 @@ namespace CarArena.EditorTools
 
         // ---------------------------------------------------------------- enemies
 
-        static void BuildDirector(GameObject playerCar, GameObject[] enemyPrefabs)
+        static ArenaDirector BuildDirector(GameObject playerCar, GameObject[] enemyPrefabs)
         {
             var go = new GameObject("ArenaDirector");
-            var points = new System.Collections.Generic.List<Transform>();
-            var root = Empty("SpawnPoints", go.transform, Vector3.zero).transform;
-            // In front of the two gates, the asphalt corners and two sand spots; all facing the centre.
-            Vector3[] spawns =
-            {
-                new Vector3(0f, 0.9f, -69f), new Vector3(-69f, 0.9f, 0f),
-                new Vector3(-62f, 0.9f, -62f), new Vector3(62f, 0.9f, -62f), new Vector3(-60f, 0.9f, 60f),
-                new Vector3(-45f, 0.9f, 45f), new Vector3(45f, 0.9f, 45f),
-            };
-            for (int i = 0; i < spawns.Length; i++)
-                points.Add(Empty("Spawn" + i, root, spawns[i], Quaternion.LookRotation(-new Vector3(spawns[i].x, 0f, spawns[i].z))).transform);
             var director = go.AddComponent<ArenaDirector>();
             director.player = playerCar.GetComponent<CarController>();
             director.enemyPrefabs = enemyPrefabs;
-            director.spawnPoints = points.ToArray();
+            director.gates = builtGates.ToArray();
             director.enemyCount = 4;
+            director.waitForIntro = true;
             director.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
             var hud = playerCar.GetComponent<CarHud>();
             hud.director = director;
             PrefabUtility.RecordPrefabInstancePropertyModifications(hud); // keep the scene-only reference on the prefab instance
+            var combat = playerCar.GetComponent<CombatHud>();
+            combat.director = director;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(combat);
+            return director;
+        }
+
+        static void BuildIntro(GameObject playerCar, ArenaGate playerGate, ArenaDirector director)
+        {
+            var go = new GameObject("Intro");
+            var cam = go.AddComponent<Camera>();
+            cam.depth = 1f;
+            cam.fieldOfView = 55f;
+            cam.nearClipPlane = 0.1f;
+            cam.farClipPlane = 900f;
+            var intro = go.AddComponent<IntroCinematic>();
+            intro.introCamera = cam;
+            intro.player = playerCar.GetComponent<CarController>();
+            intro.playerGate = playerGate;
+            intro.director = director;
+            intro.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
         }
 
         // ---------------------------------------------------------------- car
@@ -795,6 +889,43 @@ namespace CarArena.EditorTools
                 hud.car = controller;
                 hud.damage = damage;
                 hud.health = health;
+
+                root.AddComponent<CombatHud>().player = health;
+
+                // Health gauge in the middle of the dashboard, right of the steering wheel.
+                var hg = Empty("HealthGauge", dash.transform, new Vector3(0.03f, 0.045f, -0.2285f));
+                Prim(PrimitiveType.Cube, "Frame", hg.transform, new Vector3(0f, 0f, 0.001f), new Vector3(0.25f, 0.05f, 0.004f), mTrim);
+                var pivot = Empty("FillPivot", hg.transform, new Vector3(-0.11f, 0f, -0.002f));
+                var fill = Prim(PrimitiveType.Cube, "Fill", pivot.transform, new Vector3(0.11f, 0f, 0f), new Vector3(0.22f, 0.03f, 0.003f), mHealthFill);
+                Label(hg.transform, "HULL", new Vector3(-0.085f, 0.04f, -0.002f), 0.1f);
+                var readout = Label(hg.transform, "100", new Vector3(0.09f, 0.04f, -0.002f), 0.13f);
+                var bar = hg.AddComponent<DashHealthBar>();
+                bar.health = health;
+                bar.fillPivot = pivot.transform;
+                bar.fillRenderer = fill.GetComponent<MeshRenderer>();
+                bar.readout = readout;
+
+                // Warning lamps in the gap between the two dials, and the TC OFF button on the dash side.
+                var lamps = Empty("WarningLamps", dash.transform, new Vector3(-0.38f, 0.04f, -0.2305f));
+                var tcLamp = Prim(PrimitiveType.Cube, "TCLamp", lamps.transform, new Vector3(0f, 0.035f, 0f), new Vector3(0.028f, 0.026f, 0.002f), mWarnLamp);
+                var tcOffLamp = Prim(PrimitiveType.Cube, "TCOffLamp", lamps.transform, new Vector3(0f, -0.002f, 0f), new Vector3(0.028f, 0.026f, 0.002f), mWarnLamp);
+                LabelDark(lamps.transform, "TC", new Vector3(0f, 0.035f, -0.0015f), 0.075f);
+                LabelDark(lamps.transform, "TC" + "\n" + "OFF", new Vector3(0f, -0.002f, -0.0015f), 0.05f);
+
+                var btnRoot = Empty("TCOffButton", dash.transform, new Vector3(-0.66f, 0.0f, -0.226f));
+                Prim(PrimitiveType.Cube, "Bezel", btnRoot.transform, new Vector3(0f, 0f, -0.002f), new Vector3(0.042f, 0.032f, 0.004f), mInterior);
+                var btn = Empty("Button", btnRoot.transform, new Vector3(0f, 0f, -0.008f));
+                Prim(PrimitiveType.Cube, "Cap", btn.transform, Vector3.zero, new Vector3(0.034f, 0.024f, 0.01f), mTrim);
+                var led = Prim(PrimitiveType.Cube, "Led", btn.transform, new Vector3(0f, 0.0075f, -0.0052f), new Vector3(0.01f, 0.003f, 0.001f), mWarnLamp);
+                Label(btn.transform, "TC OFF", new Vector3(0f, -0.003f, -0.0056f), 0.045f);
+                Label(btnRoot.transform, "ASSISTS (B)", new Vector3(0f, 0.026f, -0.003f), 0.05f);
+
+                var warn = lamps.AddComponent<DashWarningLights>();
+                warn.car = controller;
+                warn.tcLamp = tcLamp.GetComponent<MeshRenderer>();
+                warn.tcOffLamp = tcOffLamp.GetComponent<MeshRenderer>();
+                warn.button = btn.transform;
+                warn.buttonLed = led.GetComponent<MeshRenderer>();
             }
             else
             {
@@ -847,7 +978,17 @@ namespace CarArena.EditorTools
             return needle;
         }
 
-        static void Label(Transform parent, string text, Vector3 localPos, float fontSize)
+        /// <summary>Black text, for printing on top of a lamp.</summary>
+        static TextMeshPro LabelDark(Transform parent, string text, Vector3 localPos, float fontSize)
+        {
+            var tmp = Label(parent, text, localPos, fontSize);
+            tmp.color = new Color(0.05f, 0.04f, 0.03f);
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.lineSpacing = -30f;
+            return tmp;
+        }
+
+        static TextMeshPro Label(Transform parent, string text, Vector3 localPos, float fontSize)
         {
             var go = new GameObject("Label");
             go.transform.SetParent(parent, false);
@@ -861,6 +1002,7 @@ namespace CarArena.EditorTools
             tmp.rectTransform.localPosition = localPos;
             tmp.rectTransform.localRotation = Quaternion.identity;
             go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            return tmp;
         }
 
         static ParticleSystem EngineSmoke(Transform car)

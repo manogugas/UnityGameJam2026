@@ -1,25 +1,37 @@
 using System.Text;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace CarArena
 {
-    /// <summary>Debug HUD: speed, gear, drive type, surfaces, damage and controls.</summary>
+    /// <summary>
+    /// Player HUD. In normal play only gameplay feedback is drawn (hit flash, WRECKED banner, kill count):
+    /// speed, gear and assists live on the dashboard. F3 toggles the debug overlay with the testing info:
+    /// speed/rpm/gear, drive type and assists, wheel surfaces, part damage, controls and the enemy roster.
+    /// </summary>
     public class CarHud : MonoBehaviour
     {
         public CarController car;
         public CarDamage damage;
         public CarHealth health;
         public ArenaDirector director;
-        public bool showHelp = true;
+        [Tooltip("Debug overlay (toggle with F3).")]
+        public bool debugVisible;
+
+        GUIStyle big, small, banner, centred, kills;
+        float hitFlash, lastHealth = -1f;
+        readonly StringBuilder sb = new StringBuilder();
 
         void Start()
         {
             if (director == null) director = FindAnyObjectByType<ArenaDirector>();
         }
 
-        GUIStyle big, small, banner;
-        float hitFlash, lastHealth = -1f;
-        readonly StringBuilder sb = new StringBuilder();
+        void Update()
+        {
+            var kb = Keyboard.current;
+            if (kb != null && kb.f3Key.wasPressedThisFrame) debugVisible = !debugVisible;
+        }
 
         void OnGUI()
         {
@@ -29,9 +41,46 @@ namespace CarArena
                 big = new GUIStyle(GUI.skin.label) { fontSize = 34, fontStyle = FontStyle.Bold };
                 small = new GUIStyle(GUI.skin.label) { fontSize = 14, richText = true };
                 banner = new GUIStyle(GUI.skin.label) { fontSize = 56, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, richText = true };
+                centred = new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 18 };
+                kills = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.UpperRight };
             }
 
             float w = Screen.width, h = Screen.height;
+            DrawGameplay(w, h);
+            if (debugVisible) DrawDebug(w, h);
+        }
+
+        void DrawGameplay(float w, float h)
+        {
+            if (health == null) return;
+            if (lastHealth >= 0f && health.Health < lastHealth) hitFlash = Mathf.Min(1f, hitFlash + 0.6f);
+            lastHealth = health.Health;
+            hitFlash = Mathf.MoveTowards(hitFlash, 0f, Time.unscaledDeltaTime * 2.5f);
+            if (hitFlash > 0f)
+            {
+                var old = GUI.color;
+                GUI.color = new Color(1f, 0.1f, 0.05f, hitFlash * 0.25f);
+                GUI.DrawTexture(new Rect(0, 0, w, h), Texture2D.whiteTexture);
+                GUI.color = old;
+            }
+
+            if (health.Kills > 0)
+            {
+                kills.normal.textColor = new Color(0f, 0f, 0f, 0.6f);
+                GUI.Label(new Rect(w - 221, 19, 200, 30), $"KILLS {health.Kills}", kills);
+                kills.normal.textColor = new Color(1f, 0.85f, 0.4f);
+                GUI.Label(new Rect(w - 222, 18, 200, 30), $"KILLS {health.Kills}", kills);
+            }
+
+            if (health.IsDead)
+            {
+                GUI.Label(new Rect(0, h * 0.3f, w, 80), "<color=#ff4030>WRECKED</color>", banner);
+                GUI.Label(new Rect(0, h * 0.3f + 70, w, 30), "<b>Backspace</b> to repair and get back in", centred);
+            }
+        }
+
+        void DrawDebug(float w, float h)
+        {
             string gear = car.ReverseGear ? "R" : car.Gear.ToString();
             GUI.Box(new Rect(w - 250, h - 130, 235, 115), GUIContent.none);
             GUI.Label(new Rect(w - 240, h - 128, 230, 45), $"{car.SpeedKmh:0} km/h", big);
@@ -65,47 +114,8 @@ namespace CarArena
                 GUI.Label(new Rect(15, h - 35, 900, 22), sb.ToString(), small);
             }
 
-            DrawCombat(w, h);
-
-            if (showHelp)
-            {
-                GUI.Label(new Rect(15, 10, 900, 22),
-                    "<b>WASD</b> drive (hold S to reverse)   <b>Space</b> handbrake   <b>Q/E</b> look   <b>Alt</b> look back   " +
-                    "<b>T</b> FWD/RWD/AWD   <b>B</b> assists   <b>R</b> flip upright   <b>Backspace</b> repair   <b>F1</b> hide help", small);
-            }
-            if (Event.current.type == EventType.KeyDown && Event.current.keyCode == KeyCode.F1) showHelp = !showHelp;
-        }
-
-        void DrawCombat(float w, float h)
-        {
             if (health != null)
-            {
-                // Health bar + kills, top right.
-                if (lastHealth >= 0f && health.Health < lastHealth) hitFlash = 1f;
-                lastHealth = health.Health;
-                hitFlash = Mathf.MoveTowards(hitFlash, 0f, Time.unscaledDeltaTime * 2.5f);
-
-                float bw = 260f, x = w - bw - 15f, y = 38f;
-                GUI.Box(new Rect(x - 6, y - 24, bw + 12, 58), GUIContent.none);
-                GUI.Label(new Rect(x, y - 22, bw, 20), $"<b>HEALTH {health.Health:0}</b>   Kills <b>{health.Kills}</b>", small);
-                var old = GUI.color;
-                GUI.color = new Color(0.15f, 0.15f, 0.15f, 0.9f);
-                GUI.DrawTexture(new Rect(x, y, bw, 14), Texture2D.whiteTexture);
-                float f = health.Health01;
-                GUI.color = Color.Lerp(new Color(0.9f, 0.15f, 0.1f), new Color(0.3f, 0.85f, 0.3f), f);
-                GUI.DrawTexture(new Rect(x, y, bw * f, 14), Texture2D.whiteTexture);
-                if (hitFlash > 0f)
-                {
-                    GUI.color = new Color(1f, 0.1f, 0.05f, hitFlash * 0.25f);
-                    GUI.DrawTexture(new Rect(0, 0, w, h), Texture2D.whiteTexture);
-                }
-                GUI.color = old;
-
-                if (health.IsDead)
-                    GUI.Label(new Rect(0, h * 0.3f, w, 80), "<color=#ff4030>WRECKED</color>", banner);
-                if (health.IsDead)
-                    GUI.Label(new Rect(0, h * 0.3f + 70, w, 30), "<b>Backspace</b> to repair and get back in", new GUIStyle(small) { alignment = TextAnchor.MiddleCenter, fontSize = 18 });
-            }
+                GUI.Label(new Rect(w - 320, 52, 315, 22), $"<b>Health {health.Health:0}</b> / {health.maxHealth:0}", small);
 
             if (director != null)
             {
@@ -121,8 +131,12 @@ namespace CarArena
                     string hp = e.IsDead ? "wrecked" : e.Health.ToString("0");
                     sb.Append($"<color={col}>{e.displayName}  {hp}</color>  <size=11>{st}</size>").Append('\n');
                 }
-                GUI.Label(new Rect(w - 320, 100, 315, 160), sb.ToString(), small);
+                GUI.Label(new Rect(w - 320, 76, 315, 160), sb.ToString(), small);
             }
+
+            GUI.Label(new Rect(15, 10, 1000, 22),
+                "<b>DEBUG (F3)</b>   <b>WASD</b> drive (hold S to reverse)   <b>Space</b> handbrake   <b>Q/E</b> look   <b>Alt</b> look back   " +
+                "<b>T</b> FWD/RWD/AWD   <b>B</b> assists   <b>R</b> flip upright   <b>Backspace</b> repair", small);
         }
     }
 }

@@ -94,6 +94,10 @@ namespace CarArena
         public Rigidbody Body => rb;
         /// <summary>Wrecked: no throttle, steering or brakes from the driver; the car just rolls to a stop.</summary>
         public bool EngineDead { get; set; }
+        /// <summary>Traction control is cutting power on a driven wheel right now.</summary>
+        public bool TractionControlActive { get; private set; }
+        /// <summary>A driven wheel is spinning or sliding well past peak grip (TC on or off).</summary>
+        public bool WheelSpin { get; private set; }
 
         static readonly float[] GearTopSpeed = { 0f, 11f, 19f, 28f, 38f, 48f, 60f };
         const float IdleRpm = 900f, RedlineRpm = 6800f;
@@ -280,6 +284,7 @@ namespace CarArena
                 tcFactor = new float[wheels.Length];
                 for (int k = 0; k < tcFactor.Length; k++) tcFactor[k] = 1f;
             }
+            bool tcActive = false, spin = false;
             for (int i = 0; i < wheels.Length; i++)
             {
                 var w = wheels[i];
@@ -304,6 +309,9 @@ namespace CarArena
                 }
                 tcFactor[i] = Mathf.MoveTowards(tcFactor[i], tcTarget, (tcTarget < tcFactor[i] ? 6f : 2.5f) * dt);
                 drive *= tcFactor[i];
+                if (share > 0f && tractionControl && tcFactor[i] < 0.9f) tcActive = true;
+                if (share > 0f && w.Grounded && w.Surface != null && ThrottleOut > 0.1f &&
+                    (Mathf.Abs(w.SlipRatio) > w.Surface.peakSlipRatio * 2.5f || w.CombinedSlip > 1.6f)) spin = true;
                 // Rev limiter for a wheel in the air, so it doesn't land spinning at top speed.
                 if (!w.Grounded && Mathf.Abs(w.WheelSpeed) > Mathf.Abs(ForwardSpeed) + 8f && Mathf.Sign(drive) == Mathf.Sign(w.Omega))
                     drive = 0f;
@@ -319,6 +327,8 @@ namespace CarArena
                 float grip = gripScale * (w.IsFront ? 1f : rearGripScale);
                 w.UpdateTyre(rb, transform, dt, drive, brake, wheelAbs, grip, tyreSubsteps, tyreForceLift);
             }
+            TractionControlActive = tcActive;
+            WheelSpin = spin;
         }
 
         void UpdateRpm(float dt)

@@ -8,6 +8,14 @@ namespace CarArena
     /// the doors are weak. At 0 the engine dies, the car smokes and rolls to a stop.
     /// Kill credit goes to the last car that hit us within a few seconds.
     /// </summary>
+    /// <summary>One chunk of damage: who took it, from whom (null = scenery) and where.</summary>
+    public struct DamageEvent
+    {
+        public CarHealth victim, attacker;
+        public float amount;
+        public Vector3 point;
+    }
+
     public class CarHealth : MonoBehaviour
     {
         public CarController car;
@@ -19,10 +27,16 @@ namespace CarArena
         public float maxHealth = 100f;
         [Tooltip("Health lost per unit of impact severity (0..1, from CarDamage) before hit-zone multipliers.")]
         public float damagePerSeverity = 65f;
-        public float frontMultiplier = 0.45f;
+        public float frontMultiplier = 0.3f;
         public float rearMultiplier = 0.85f;
         public float sideMultiplier = 1.35f;
         public float topMultiplier = 1f;
+        [Tooltip("Damage multiplier for the car doing the ramming (moving into the other car faster).")]
+        public float rammerMultiplier = 0.45f;
+        [Tooltip("Damage multiplier for the car being rammed.")]
+        public float rammedMultiplier = 1.15f;
+        [Tooltip("Closing speed difference (m/s) that decides who is the rammer.")]
+        public float rammingMargin = 1.5f;
         [Tooltip("Seconds a hit from another car still counts as the kill.")]
         public float killCreditTime = 5f;
 
@@ -40,7 +54,7 @@ namespace CarArena
 
         /// <summary>(victim, killer or null)</summary>
         public event Action<CarHealth, CarHealth> Died;
-        public event Action<CarHealth, float> Damaged;
+        public event Action<DamageEvent> Damaged;
 
         CarHealth lastAttacker;
         float lastAttackTime = -100f;
@@ -79,21 +93,43 @@ namespace CarArena
                 : info.top ? topMultiplier : 1f;
 
             CarHealth attacker = info.otherBody != null ? info.otherBody.GetComponent<CarHealth>() : null;
-            if (attacker != null && attacker != this)
+            if (attacker == this) attacker = null;
+            if (attacker != null)
             {
                 lastAttacker = attacker;
                 lastAttackTime = Time.time;
             }
-            ApplyDamage(info.severity * damagePerSeverity * zone);
+            ApplyDamage(info.severity * damagePerSeverity * zone * RammingFactor(info), info.worldPoint, attacker);
         }
 
-        public void ApplyDamage(float amount)
+        /// <summary>
+        /// Car-on-car hits: whoever was driving into the contact point faster is the rammer and takes much
+        /// less damage; the one being rammed takes more. Scenery hits are unaffected.
+        /// </summary>
+        float RammingFactor(ImpactInfo info)
+        {
+            if (info.otherBody == null || car == null || car.Body == null) return 1f;
+            Vector3 toPoint = info.worldPoint - car.Body.worldCenterOfMass;
+            toPoint.y = 0f;
+            if (toPoint.sqrMagnitude < 0.01f) return 1f;
+            toPoint.Normalize();
+            float mine = Vector3.Dot(car.Body.linearVelocity, toPoint);
+            float theirs = Vector3.Dot(info.otherBody.linearVelocity, -toPoint);
+            if (mine > theirs + rammingMargin) return rammerMultiplier;
+            if (theirs > mine + rammingMargin) return rammedMultiplier;
+            return 1f;
+        }
+
+        public void ApplyDamage(float amount) => ApplyDamage(amount, transform.position, null);
+
+        public void ApplyDamage(float amount, Vector3 point, CarHealth attacker)
         {
             if (IsDead || amount <= 0f) return;
+            amount = Mathf.Min(amount, Health);
             Health = Mathf.Max(0f, Health - amount);
             LastDamageTime = Time.time;
-            Damaged?.Invoke(this, amount);
             if (Health <= 0f) Die();
+            Damaged?.Invoke(new DamageEvent { victim = this, attacker = attacker, amount = amount, point = point });
             UpdateSmoke();
         }
 

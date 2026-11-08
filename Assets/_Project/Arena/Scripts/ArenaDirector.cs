@@ -5,21 +5,26 @@ using UnityEngine;
 namespace CarArena
 {
     /// <summary>
-    /// Sandbox spawner: keeps enemyCount enemy cars in the arena. A destroyed enemy stays as a smoking
-    /// wreck for a while, and a replacement spawns at the free spawn point furthest from the player.
-    /// Enemies pick their targets from Combatants (the player and each other).
+    /// Sandbox spawner: keeps enemyCount enemy cars in the arena. New cars wait in a gate tunnel, the
+    /// portcullis rises, they drive in and the gate shuts behind them. A destroyed enemy stays as a
+    /// smoking wreck for a while and is replaced. Enemies pick targets from Combatants (the player and
+    /// each other).
     /// </summary>
     public class ArenaDirector : MonoBehaviour
     {
         public CarController player;
         [Tooltip("Enemy prefabs, cycled in order (Rammer, Flanker, Bruiser...).")]
         public GameObject[] enemyPrefabs;
-        public Transform[] spawnPoints;
-        public int enemyCount = 3;
+        [Tooltip("Gates enemies enter through. The one nearest the player's start is used last.")]
+        public ArenaGate[] gates;
+        public int enemyCount = 4;
         public float respawnDelay = 5f;
         [Tooltip("Wrecks are removed after this long.")]
         public float wreckLifetime = 25f;
-        public float minSpawnDistance = 30f;
+        [Tooltip("Don't spawn until BeginSpawning() is called (the intro calls it when it ends).")]
+        public bool waitForIntro;
+        [Tooltip("A gate isn't used while the player is closer than this (no enemies spawning on top of you).")]
+        public float minPlayerDistance = 30f;
         [Tooltip("Optional: the stands' crowd cheers on big crashes and kills.")]
         public ArenaCrowd crowd;
 
@@ -27,37 +32,64 @@ namespace CarArena
         /// <summary>Everyone who can be targeted: the player plus all enemies (dead ones are skipped by the AI).</summary>
         public IReadOnlyList<CarHealth> Combatants => combatants;
         public int EnemiesDestroyed { get; private set; }
+        public event System.Action<CarHealth> CombatantAdded;
 
         readonly List<CarHealth> enemies = new List<CarHealth>();
         readonly List<CarHealth> combatants = new List<CarHealth>();
         CarHealth playerHealth;
-        int nextPrefab, spawnCount;
+        int nextPrefab, spawnCount, pending;
+        bool spawning;
 
         void Start()
         {
             playerHealth = player != null ? player.GetComponent<CarHealth>() : null;
             if (player != null) WatchForCrowd(player.gameObject);
-            for (int i = 0; i < enemyCount; i++) Spawn();
+            RebuildCombatants();
+            if (!waitForIntro) BeginSpawning();
         }
 
-        void RebuildCombatants()
+        public void BeginSpawning()
         {
-            combatants.Clear();
-            if (playerHealth != null) combatants.Add(playerHealth);
-            foreach (var e in enemies) if (e != null) combatants.Add(e);
+            if (spawning) return;
+            spawning = true;
+            pending += enemyCount;
         }
 
-        void Spawn()
+        void Update()
         {
-            if (enemyPrefabs == null || enemyPrefabs.Length == 0 || spawnPoints == null || spawnPoints.Length == 0) return;
-            var prefab = enemyPrefabs[nextPrefab++ % enemyPrefabs.Length];
-            Transform point = PickSpawnPoint();
-            var go = Instantiate(prefab, point.position, point.rotation);
+            if (!spawning || pending <= 0 || gates == null) return;
+            var gate = PickGate();
+            if (gate == null) return;
+            pending--;
+            StartCoroutine(Admit(gate, enemyPrefabs[nextPrefab++ % enemyPrefabs.Length]));
+        }
+
+        /// <summary>Free gate furthest from the player, never one the player is parked in front of.</summary>
+        ArenaGate PickGate()
+        {
+            Vector3 p = player != null ? player.transform.position : Vector3.zero;
+            ArenaGate best = null;
+            float bestD = -1f;
+            foreach (var g in gates)
+            {
+                if (g == null || g.Busy) continue;
+                float d = Vector3.Distance(g.transform.position, p);
+                if (d < minPlayerDistance) continue;
+                if (d > bestD) { bestD = d; best = g; }
+            }
+            return best;
+        }
+
+        IEnumerator Admit(ArenaGate gate, GameObject prefab)
+        {
+            gate.Busy = true;
+            var go = Instantiate(prefab, gate.spawnPoint.position, gate.spawnPoint.rotation);
             var driver = go.GetComponent<AICarDriver>();
             if (driver != null)
             {
                 driver.director = this;
                 driver.SetTarget(player);
+                driver.Hold();
             }
             WatchForCrowd(go);
             var health = go.GetComponent<CarHealth>();
@@ -68,23 +100,27 @@ namespace CarArena
                 enemies.Add(health);
             }
             RebuildCombatants();
+            if (health != null) CombatantAdded?.Invoke(health);
+
+            gate.Open();
+            float t = 0f;
+            while (!gate.IsFullyOpen && t < 5f) { t += Time.deltaTime; yield return null; }
+            if (driver != null) driver.DriveIn(gate.entryPoint.position);
+            if (crowd != null) crowd.Cheer(0.6f);
+
+            t = 0f;
+            while (go != null && !gate.HasPassed(go.transform.position, 7f) && t < 14f) { t += Time.deltaTime; yield return null; }
+            gate.Close();
+            t = 0f;
+            while (!gate.IsFullyClosed && t < 5f) { t += Time.deltaTime; yield return null; }
+            gate.Busy = false;
         }
 
-        Transform PickSpawnPoint()
+        void RebuildCombatants()
         {
-            Vector3 p = player != null ? player.transform.position : Vector3.zero;
-            Transform best = spawnPoints[0];
-            float bestScore = float.MinValue;
-            foreach (var sp in spawnPoints)
-            {
-                float d = Vector3.Distance(sp.position, p);
-                bool blocked = false;
-                foreach (var e in enemies)
-                    if (e != null && Vector3.Distance(e.transform.position, sp.position) < 6f) { blocked = true; break; }
-                float score = d + (blocked ? -1000f : 0f) + (d < minSpawnDistance ? -500f : 0f) + Random.Range(0f, 8f);
-                if (score > bestScore) { bestScore = score; best = sp; }
-            }
-            return best;
+            combatants.Clear();
+            if (playerHealth != null) combatants.Add(playerHealth);
+            foreach (var e in enemies) if (e != null) combatants.Add(e);
         }
 
         void WatchForCrowd(GameObject car)
@@ -109,7 +145,7 @@ namespace CarArena
             yield return new WaitForSeconds(respawnDelay);
             enemies.Remove(wreck);
             RebuildCombatants();
-            Spawn();
+            pending++;
             yield return new WaitForSeconds(Mathf.Max(0f, wreckLifetime - respawnDelay));
             if (wreck != null) Destroy(wreck.gameObject);
         }
