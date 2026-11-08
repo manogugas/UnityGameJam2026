@@ -99,6 +99,7 @@ namespace CarArena
                 localDir = transform.InverseTransformDirection(dir),
                 impulse = impulse,
                 severity = Mathf.Clamp01((impulse - minImpulse) / (fullImpulse - minImpulse)),
+                otherBody = c.rigidbody,
             };
             info.bottom = info.localDir.y > 0.7f;
             if (info.bottom) info.severity *= 0.25f;

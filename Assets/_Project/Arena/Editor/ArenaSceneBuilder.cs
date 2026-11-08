@@ -19,12 +19,21 @@ namespace CarArena.EditorTools
         const string ScenePath = Root + "/Scenes/ArenaTest.unity";
         const string InputPath = Root + "/Input/CarControls.inputactions";
 
-        const float SandRadius = 55f;
-        const float WallRadius = 77f;
-        const float BankInner = 64f;
+        // Square arena: inner wall face at +-ArenaHalf, sand in the middle, asphalt band around it.
+        const float ArenaHalf = 75f;
+        const float SandHalf = 55f;
+        const float BankDepth = 11f;
         const float BankHeight = 3.6f;
+        const float WallHeight = 6f;
+        // Stands (the crowd component uses the same numbers).
+        const int StandRows = 14;
+        const float StandRowDepth = 1.3f;
+        const float StandFirstTop = 6.6f;
+        const float StandRise = 0.75f;
 
         static Material mSand, mAsphalt, mBank, mConcrete, mRamp, mObstacle, mTyre, mCrate, mWreck;
+        static Material mStone, mStone2, mGate, mClothRed, mClothPurple, mSkin;
+        static Material[] mCrowd;
         static Material mBody, mPanel, mTrim, mInterior, mSeat, mGlass, mCrack, mMirror, mGauge, mBed, mGaugeFace, mNeedle, mRedline;
         static Mesh unitCube;
         static PhysicsMaterial carPhysMat;
@@ -66,6 +75,14 @@ namespace CarArena.EditorTools
             car.transform.SetPositionAndRotation(new Vector3(0f, 0.9f, -42f), Quaternion.identity);
             PrefabUtility.SaveAsPrefabAssetAndConnect(car, PrefabPath, InteractionMode.AutomatedAction);
 
+            var enemyPrefabs = new[]
+            {
+                BuildEnemyPrefab(asphalt, DriverArchetype.Rammer, "Rammer", new Color(0.62f, 0.16f, 0.12f), 1250f, 90f, 125f, 2700f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Flanker, "Flanker", new Color(0.85f, 0.65f, 0.12f), 1100f, 75f, 120f, 2500f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Bruiser", new Color(0.2f, 0.24f, 0.18f), 1900f, 170f, 165f, 3600f),
+            };
+            BuildDirector(car, enemyPrefabs);
+
             EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
             AssetDatabase.SaveAssets();
             Debug.Log("[CarArena] Built " + ScenePath);
@@ -92,6 +109,20 @@ namespace CarArena.EditorTools
             mMirror = Mat("CarMirror", new Color(0.85f, 0.9f, 0.95f), 0.95f, 0.8f);
             mGauge = Mat("CarGauge", new Color(0.9f, 0.85f, 0.7f), 0.5f);
             mBed = Mat("CarBed", new Color(0.55f, 0.6f, 0.45f), 0.05f);
+            mStone = Mat("Stone", new Color(0.8f, 0.74f, 0.62f), 0.05f);
+            mStone2 = Mat("StoneDark", new Color(0.68f, 0.62f, 0.52f), 0.05f);
+            mGate = Mat("Gate", new Color(0.07f, 0.06f, 0.05f), 0.1f);
+            mClothRed = Mat("ClothRed", new Color(0.62f, 0.08f, 0.06f), 0.1f);
+            mClothPurple = Mat("ClothPurple", new Color(0.36f, 0.1f, 0.42f), 0.1f);
+            mSkin = Mat("CrowdSkin", new Color(0.86f, 0.66f, 0.52f), 0.2f);
+            mCrowd = new[]
+            {
+                Mat("CrowdRed", new Color(0.7f, 0.2f, 0.18f), 0.1f),
+                Mat("CrowdBlue", new Color(0.2f, 0.33f, 0.68f), 0.1f),
+                Mat("CrowdWhite", new Color(0.86f, 0.82f, 0.72f), 0.1f),
+                Mat("CrowdGreen", new Color(0.3f, 0.5f, 0.25f), 0.1f),
+                Mat("CrowdOchre", new Color(0.78f, 0.56f, 0.2f), 0.1f),
+            };
             mGaugeFace = Mat("GaugeFace", new Color(0.04f, 0.04f, 0.045f), 0.6f);
             mNeedle = Mat("GaugeNeedle", new Color(1f, 0.42f, 0.08f), 0.4f);
             mNeedle.EnableKeyword("_EMISSION");
@@ -231,7 +262,7 @@ namespace CarArena.EditorTools
             RenderSettings.ambientGroundColor = new Color(0.3f, 0.28f, 0.25f);
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogStartDistance = 80f;
+            RenderSettings.fogStartDistance = 130f;
             RenderSettings.fogEndDistance = 320f;
             RenderSettings.fogColor = new Color(0.75f, 0.78f, 0.82f);
         }
@@ -242,36 +273,43 @@ namespace CarArena.EditorTools
         {
             var arena = new GameObject("Arena").transform;
 
-            var sandGo = MeshObj("SandFloor", arena, Vector3.zero, SaveMesh(ProcMesh.Disk(SandRadius, 96), "SandDisk"), mSand);
-            sandGo.AddComponent<MeshCollider>();
-            Tag(sandGo, sand);
+            // Old ring-arena meshes are no longer used.
+            foreach (var old in new[] { "SandDisk", "AsphaltRing", "BankedRing" })
+                AssetDatabase.DeleteAsset($"{MeshDir}/{old}.asset");
 
-            var ringGo = MeshObj("AsphaltRing", arena, Vector3.zero,
-                SaveMesh(ProcMesh.Annulus(SandRadius, WallRadius + 1.5f, 4, 160, 0f, 360f, null), "AsphaltRing"), mAsphalt);
-            ringGo.AddComponent<MeshCollider>();
-            Tag(ringGo, asphalt);
+            // Floor: sand square in the middle, asphalt band around it running under the wall.
+            Tag(Prim(PrimitiveType.Cube, "SandFloor", arena, new Vector3(0f, -0.1f, 0f), new Vector3(SandHalf * 2f, 0.2f, SandHalf * 2f), mSand, true), sand);
+            float outer = ArenaHalf + 2f;
+            float band = outer - SandHalf, bandMid = SandHalf + band * 0.5f;
+            Tag(Prim(PrimitiveType.Cube, "AsphaltN", arena, new Vector3(0f, -0.1f, bandMid), new Vector3(outer * 2f, 0.2f, band), mAsphalt, true), asphalt);
+            Tag(Prim(PrimitiveType.Cube, "AsphaltS", arena, new Vector3(0f, -0.1f, -bandMid), new Vector3(outer * 2f, 0.2f, band), mAsphalt, true), asphalt);
+            Tag(Prim(PrimitiveType.Cube, "AsphaltE", arena, new Vector3(bandMid, -0.1f, 0f), new Vector3(band, 0.2f, SandHalf * 2f), mAsphalt, true), asphalt);
+            Tag(Prim(PrimitiveType.Cube, "AsphaltW", arena, new Vector3(-bandMid, -0.1f, 0f), new Vector3(band, 0.2f, SandHalf * 2f), mAsphalt, true), asphalt);
 
-            // Banked wall ramp around half the ring (angles 0..180 => the +Z half).
-            var bankMesh = ProcMesh.Annulus(BankInner, WallRadius - 0.9f, 16, 120, 0f, 180f, (rt, at) =>
+            // Banked wall ramps along the north and east sides (half the perimeter), tapering out before the corners.
+            var bank = SaveMesh(ProcMesh.BankStrip((ArenaHalf - 5f) * 2f, BankDepth, BankHeight, 70, 16, 12f, "BankStrip"), "BankStrip");
+            var bankN = MeshObj("BankedRampN", arena, new Vector3(0f, 0f, ArenaHalf - BankDepth - 0.05f), bank, mBank);
+            bankN.AddComponent<MeshCollider>();
+            Tag(bankN, asphalt);
+            var bankE = MeshObj("BankedRampE", arena, new Vector3(ArenaHalf - BankDepth - 0.05f, 0f, 0f), bank, mBank, Quaternion.Euler(0f, 90f, 0f));
+            bankE.AddComponent<MeshCollider>();
+            Tag(bankE, asphalt);
+
+            // Podium wall (the arena edge) with a parapet.
+            var wall = Empty("PodiumWall", arena, Vector3.zero).transform;
+            foreach (var dir in new[] { Vector3.forward, Vector3.right, Vector3.back, Vector3.left })
             {
-                float taper = Mathf.SmoothStep(0f, 1f, at / 0.1f) * Mathf.SmoothStep(0f, 1f, (1f - at) / 0.1f);
-                return 0.02f + BankHeight * Mathf.Pow(rt, 1.7f) * taper;
-            }, "BankedRing");
-            var bankGo = MeshObj("BankedRamp", arena, Vector3.zero, SaveMesh(bankMesh, "BankedRing"), mBank);
-            bankGo.AddComponent<MeshCollider>();
-            Tag(bankGo, asphalt);
-
-            // Ring wall
-            var wall = Empty("RingWall", arena, Vector3.zero).transform;
-            int segs = 80;
-            float segLen = 2f * Mathf.PI * (WallRadius + 1f) / segs + 0.3f;
-            for (int i = 0; i < segs; i++)
-            {
-                float a = (i + 0.5f) / segs * Mathf.PI * 2f;
-                Vector3 dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
-                Prim(PrimitiveType.Cube, "Wall" + i, wall, dir * (WallRadius + 1f) + Vector3.up * 3f,
-                    new Vector3(segLen, 6f, 2f), mConcrete, true, Quaternion.LookRotation(-dir));
+                var rot = Quaternion.LookRotation(-dir);
+                Prim(PrimitiveType.Cube, "Wall", wall, dir * (ArenaHalf + 1f) + Vector3.up * (WallHeight * 0.5f),
+                    new Vector3(outer * 2f, WallHeight, 2f), mStone2, true, rot);
+                Prim(PrimitiveType.Cube, "Parapet", wall, dir * (ArenaHalf + 0.3f) + Vector3.up * (WallHeight + 0.4f),
+                    new Vector3(outer * 2f, 0.8f, 0.6f), mStone, false, rot);
             }
+            // Gates on the flat sides (south, west): the enemies' entrances. Visual only, the wall stays solid.
+            Gate(arena, Vector3.back);
+            Gate(arena, Vector3.left);
+
+            BuildStands(arena);
 
             // Central ramps
             var ramps = Empty("Ramps", arena, Vector3.zero).transform;
@@ -303,14 +341,12 @@ namespace CarArena.EditorTools
             for (int i = 0; i < pillars.Length; i++)
                 Prim(PrimitiveType.Cylinder, "Pillar" + i, obstacles, pillars[i] + Vector3.up * 2f, new Vector3(3f, 2f, 3f), mObstacle, true);
 
-            // Slalom of barriers on the flat half of the asphalt ring (-Z half).
-            for (int i = 0; i < 7; i++)
+            // Slalom of barriers on the flat south band, leaving the gate in the middle clear.
+            float[] slalomX = { -45f, -33f, -21f, 21f, 33f, 45f };
+            for (int i = 0; i < slalomX.Length; i++)
             {
-                float a = Mathf.Lerp(200f, 340f, i / 6f) * Mathf.Deg2Rad;
-                float r = i % 2 == 0 ? 60f : 71f;
-                Vector3 dir = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a));
-                Prim(PrimitiveType.Cube, "Barrier" + i, obstacles, dir * r + Vector3.up * 0.5f, new Vector3(5f, 1f, 0.7f),
-                    mConcrete, true, Quaternion.LookRotation(dir));
+                float z = -bandMid + (i % 2 == 0 ? 5f : -5f);
+                Prim(PrimitiveType.Cube, "Barrier" + i, obstacles, new Vector3(slalomX[i], 0.5f, z), new Vector3(5f, 1f, 0.7f), mConcrete, true);
             }
 
             // Movable props
@@ -324,7 +360,7 @@ namespace CarArena.EditorTools
                     Object.DestroyImmediate(t.GetComponent<Collider>());
                     var mc = t.AddComponent<MeshCollider>();
                     mc.convex = true;
-                    t.AddComponent<Rigidbody>().mass = 18f;
+                    Prop(t, 18f);
                 }
             int n = 0;
             for (int row = 0; row < 3; row++)
@@ -332,13 +368,22 @@ namespace CarArena.EditorTools
                 {
                     var crate = Prim(PrimitiveType.Cube, "Crate" + n++, props,
                         new Vector3(-22f + (c - (2 - row) * 0.5f) * 1.05f, 0.5f + row * 1.0f, -8f), Vector3.one, mCrate, true);
-                    crate.AddComponent<Rigidbody>().mass = 40f;
+                    Prop(crate, 40f);
                 }
 
             Wreck("Wreck0", props, new Vector3(20f, 0f, -40f), 30f);
             Wreck("Wreck1", props, new Vector3(-25f, 0f, -36f), -70f);
-            Wreck("Wreck2", props, new Vector3(0f, 0f, -65f), 90f);
             Wreck("Wreck3", props, new Vector3(-48f, 0f, 22f), 10f);
+        }
+
+        /// <summary>Loose physics prop. Interpolated, otherwise it visibly stutters when resting on
+        /// (or seen from) the interpolated player car.</summary>
+        static Rigidbody Prop(GameObject go, float mass)
+        {
+            var rb = go.AddComponent<Rigidbody>();
+            rb.mass = mass;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+            return rb;
         }
 
         static void Ramp(string name, Transform parent, Mesh mesh, Vector3 pos, float yaw)
@@ -357,13 +402,135 @@ namespace CarArena.EditorTools
             rb.centerOfMass = new Vector3(0f, -0.3f, 0f);
             rb.linearDamping = 0.3f;
             rb.angularDamping = 0.5f;
+            rb.interpolation = RigidbodyInterpolation.Interpolate;
+        }
+
+        // ---------------------------------------------------------------- stands
+
+        static void Gate(Transform parent, Vector3 n)
+        {
+            var g = Empty("Gate", parent, n * (ArenaHalf - 0.06f), Quaternion.LookRotation(-n)).transform;
+            Prim(PrimitiveType.Cube, "Doorway", g, new Vector3(0f, 2.4f, 0f), new Vector3(7f, 4.8f, 0.1f), mGate);
+            for (int s = -1; s <= 1; s += 2)
+                Prim(PrimitiveType.Cube, "Jamb", g, new Vector3(4.1f * s, 2.9f, -0.25f), new Vector3(1.2f, 5.8f, 0.6f), mStone);
+            Prim(PrimitiveType.Cube, "Lintel", g, new Vector3(0f, 5.4f, -0.3f), new Vector3(9.6f, 1.1f, 0.7f), mStone);
+            for (int b = 0; b < 6; b++) // portcullis bars
+                Prim(PrimitiveType.Cube, "Bar", g, new Vector3(-3f + b * 1.2f, 2.4f, -0.08f), new Vector3(0.12f, 4.8f, 0.12f), mTrim);
+        }
+
+        /// <summary>Tiered stone seating on all four sides, a colonnade with banners on top, and the emperor's box.</summary>
+        static void BuildStands(Transform arena)
+        {
+            var stands = Empty("Stands", arena, Vector3.zero).transform;
+            float first = ArenaHalf + 2f;
+            float lastTop = StandFirstTop + StandRise * (StandRows - 1);
+            foreach (var n in new[] { Vector3.forward, Vector3.right, Vector3.back, Vector3.left })
+            {
+                var side = Empty("Side", stands, Vector3.zero).transform;
+                var rot = Quaternion.LookRotation(-n);
+                Vector3 along = Vector3.Cross(Vector3.up, n);
+                for (int i = 0; i < StandRows; i++)
+                {
+                    float dist = first + StandRowDepth * (i + 0.5f);
+                    float top = StandFirstTop + StandRise * i;
+                    float len = 2f * (first + StandRowDepth * (i + 1));
+                    Prim(PrimitiveType.Cube, "Row" + i, side, n * dist + Vector3.up * (top * 0.5f),
+                        new Vector3(len, top, StandRowDepth), i % 2 == 0 ? mStone : mStone2, false, rot);
+                }
+                float backDist = first + StandRowDepth * StandRows + 0.75f;
+                float backTop = lastTop + 8f;
+                Prim(PrimitiveType.Cube, "BackWall", side, n * backDist + Vector3.up * (backTop * 0.5f),
+                    new Vector3(2f * (backDist + 0.75f), backTop, 1.5f), mStone2, false, rot);
+
+                // Colonnade on the top row, with alternating red and purple banners between the columns.
+                float colDist = first + StandRowDepth * (StandRows - 0.5f);
+                float colH = 6f, topLen = 2f * colDist;
+                int k = 0;
+                for (float x = -topLen * 0.5f + 4f; x <= topLen * 0.5f - 4f; x += 8f, k++)
+                {
+                    Prim(PrimitiveType.Cylinder, "Column", side, n * colDist + along * x + Vector3.up * (lastTop + colH * 0.5f),
+                        new Vector3(0.9f, colH * 0.5f, 0.9f), mStone);
+                    if (k % 2 == 0 && x + 4f < topLen * 0.5f - 4f)
+                        Prim(PrimitiveType.Cube, "Banner", side, n * (colDist - 0.7f) + along * (x + 4f) + Vector3.up * (lastTop + colH - 2.4f),
+                            new Vector3(2.4f, 4f, 0.08f), (k / 2) % 2 == 0 ? mClothRed : mClothPurple, false, rot);
+                }
+                Prim(PrimitiveType.Cube, "Entablature", side, n * colDist + Vector3.up * (lastTop + colH + 0.5f),
+                    new Vector3(topLen, 1f, 1.8f), mStone2, false, rot);
+            }
+
+            // Emperor's box (pulvinar) in the middle of the north stand.
+            var box = Empty("EmperorsBox", stands, Vector3.forward * (first + 3.25f)).transform;
+            Prim(PrimitiveType.Cube, "Podium", box, Vector3.up * 5.25f, new Vector3(14f, 10.5f, 6.5f), mStone2);
+            Prim(PrimitiveType.Cube, "Drape", box, new Vector3(0f, 10f, -3.3f), new Vector3(14.2f, 1.6f, 0.1f), mClothRed);
+            for (int x = -1; x <= 1; x += 2)
+                for (int z = -1; z <= 1; z += 2)
+                    Prim(PrimitiveType.Cylinder, "BoxColumn", box, new Vector3(6.3f * x, 12.75f, 2.7f * z), new Vector3(0.6f, 2.25f, 0.6f), mStone);
+            Prim(PrimitiveType.Cube, "Canopy", box, new Vector3(0f, 15.2f, 0f), new Vector3(15f, 0.5f, 7.2f), mClothPurple);
+            Prim(PrimitiveType.Cube, "Throne", box, new Vector3(0f, 11.4f, 1.2f), new Vector3(1.6f, 1.8f, 1.2f), mClothPurple);
+
+            // The crowd is generated at runtime from these numbers (no mesh assets).
+            var crowdGo = new GameObject("Crowd");
+            crowdGo.transform.SetParent(stands, false);
+            crowdGo.AddComponent<AudioSource>();
+            var crowd = crowdGo.AddComponent<ArenaCrowd>();
+            crowd.cube = unitCube;
+            crowd.clothes = mCrowd;
+            crowd.skin = mSkin;
+            crowd.firstRowDistance = first;
+            crowd.rowDepth = StandRowDepth;
+            crowd.firstRowTop = StandFirstTop;
+            crowd.rowRise = StandRise;
+            crowd.rows = StandRows;
+            crowd.exclusions = new[] { new Bounds(new Vector3(0f, 10f, first + 3.25f), new Vector3(14.5f, 30f, 7f)) };
+        }
+
+        // ---------------------------------------------------------------- enemies
+
+        static void BuildDirector(GameObject playerCar, GameObject[] enemyPrefabs)
+        {
+            var go = new GameObject("ArenaDirector");
+            var points = new System.Collections.Generic.List<Transform>();
+            var root = Empty("SpawnPoints", go.transform, Vector3.zero).transform;
+            // In front of the two gates, the asphalt corners and two sand spots; all facing the centre.
+            Vector3[] spawns =
+            {
+                new Vector3(0f, 0.9f, -69f), new Vector3(-69f, 0.9f, 0f),
+                new Vector3(-62f, 0.9f, -62f), new Vector3(62f, 0.9f, -62f), new Vector3(-60f, 0.9f, 60f),
+                new Vector3(-45f, 0.9f, 45f), new Vector3(45f, 0.9f, 45f),
+            };
+            for (int i = 0; i < spawns.Length; i++)
+                points.Add(Empty("Spawn" + i, root, spawns[i], Quaternion.LookRotation(-new Vector3(spawns[i].x, 0f, spawns[i].z))).transform);
+            var director = go.AddComponent<ArenaDirector>();
+            director.player = playerCar.GetComponent<CarController>();
+            director.enemyPrefabs = enemyPrefabs;
+            director.spawnPoints = points.ToArray();
+            director.enemyCount = 4;
+            director.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            var hud = playerCar.GetComponent<CarHud>();
+            hud.director = director;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(hud); // keep the scene-only reference on the prefab instance
         }
 
         // ---------------------------------------------------------------- car
 
         static GameObject BuildCar(SurfaceProfile defaultSurface)
+            => BuildCar(defaultSurface, "PlayerCar", true, null, null);
+
+        /// <summary>Builds a car. Enemies get the same physics/damage but no camera, cockpit gauges or HUD,
+        /// a different paint job, an AI driver and 3D engine sound.</summary>
+        static GameObject BuildCar(SurfaceProfile defaultSurface, string name, bool player, Material body, Material panel)
         {
-            var root = new GameObject("PlayerCar");
+            var savedBody = mBody;
+            var savedPanel = mPanel;
+            if (body != null) mBody = body;
+            if (panel != null) mPanel = panel;
+            try { return BuildCarInternal(defaultSurface, name, player); }
+            finally { mBody = savedBody; mPanel = savedPanel; }
+        }
+
+        static GameObject BuildCarInternal(SurfaceProfile defaultSurface, string name, bool player)
+        {
+            var root = new GameObject(name);
             var t = root.transform;
             var rb = root.AddComponent<Rigidbody>();
             rb.mass = 1250f;
@@ -373,9 +540,12 @@ namespace CarArena.EditorTools
             rb.collisionDetectionMode = CollisionDetectionMode.Continuous;
 
             var input = root.AddComponent<CarInput>();
-            var so = new SerializedObject(input);
-            so.FindProperty("actions").objectReferenceValue = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputPath);
-            so.ApplyModifiedPropertiesWithoutUndo();
+            if (player)
+            {
+                var so = new SerializedObject(input);
+                so.FindProperty("actions").objectReferenceValue = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputPath);
+                so.ApplyModifiedPropertiesWithoutUndo();
+            }
 
             // Colliders
             var colLower = Empty("ColliderLower", t, Vector3.zero).AddComponent<BoxCollider>();
@@ -556,13 +726,17 @@ namespace CarArena.EditorTools
             }
 
             // ---- Driver head / camera
-            var head = Empty("DriverHead", t, new Vector3(-0.38f, 0.82f, -0.5f));
-            head.tag = "MainCamera";
-            var cam = head.AddComponent<Camera>();
-            cam.nearClipPlane = 0.03f;
-            cam.farClipPlane = 600f;
-            cam.fieldOfView = 70f;
-            head.AddComponent<AudioListener>();
+            GameObject head = null;
+            if (player)
+            {
+                head = Empty("DriverHead", t, new Vector3(-0.38f, 0.82f, -0.5f));
+                head.tag = "MainCamera";
+                var cam = head.AddComponent<Camera>();
+                cam.nearClipPlane = 0.03f;
+                cam.farClipPlane = 600f;
+                cam.fieldOfView = 70f;
+                head.AddComponent<AudioListener>();
+            }
 
             // ---- Components
             var controller = root.AddComponent<CarController>();
@@ -575,12 +749,15 @@ namespace CarArena.EditorTools
             damage.input = input;
             damage.deformables = new[] { frontBody, rearBody, hood, roof, doorL, doorR };
 
-            var gauges = dash.AddComponent<DashGauges>();
-            gauges.car = controller;
-            gauges.speedNeedle = speedNeedle;
-            gauges.rpmNeedle = rpmNeedle;
-            gauges.maxSpeedKmh = 200f;
-            gauges.maxRpm = 8000f;
+            if (player)
+            {
+                var gauges = dash.AddComponent<DashGauges>();
+                gauges.car = controller;
+                gauges.speedNeedle = speedNeedle;
+                gauges.rpmNeedle = rpmNeedle;
+                gauges.maxSpeedKmh = 200f;
+                gauges.maxRpm = 8000f;
+            }
             damage.parts = new[] { bumperF, bumperR, mirrorL, mirrorR, rearView };
             damage.hood = hood;
             damage.hoodLatch = hoodLatch;
@@ -594,19 +771,35 @@ namespace CarArena.EditorTools
             interiorDamage.gloveboxHinge = glove.transform;
             interiorDamage.sunVisorHinge = visor.transform;
 
-            var camCtl = head.AddComponent<CarCamera>();
-            camCtl.car = controller;
-            camCtl.input = input;
-            camCtl.damage = damage;
+            var health = root.AddComponent<CarHealth>();
+            health.car = controller;
+            health.damage = damage;
+            health.isPlayer = player;
+            health.displayName = player ? "You" : name;
+            health.smoke = EngineSmoke(t);
 
             root.AddComponent<AudioSource>();
             var audio = root.AddComponent<CarAudio>();
             audio.car = controller;
             audio.damage = damage;
+            audio.spatial = !player;
 
-            var hud = root.AddComponent<CarHud>();
-            hud.car = controller;
-            hud.damage = damage;
+            if (player)
+            {
+                var camCtl = head.AddComponent<CarCamera>();
+                camCtl.car = controller;
+                camCtl.input = input;
+                camCtl.damage = damage;
+
+                var hud = root.AddComponent<CarHud>();
+                hud.car = controller;
+                hud.damage = damage;
+                hud.health = health;
+            }
+            else
+            {
+                root.AddComponent<AICarDriver>();
+            }
 
             return root;
         }
@@ -668,6 +861,62 @@ namespace CarArena.EditorTools
             tmp.rectTransform.localPosition = localPos;
             tmp.rectTransform.localRotation = Quaternion.identity;
             go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        static ParticleSystem EngineSmoke(Transform car)
+        {
+            var go = Empty("EngineSmoke", car, new Vector3(0f, 0.42f, 1.6f), Quaternion.Euler(-80f, 0f, 0f));
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.loop = true;
+            main.playOnAwake = true;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.8f, 2.8f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(1.2f, 2.2f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.5f, 0.9f);
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            main.gravityModifier = -0.04f;
+            main.maxParticles = 300;
+            var emission = ps.emission;
+            emission.rateOverTime = 0f;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 18f;
+            shape.radius = 0.35f;
+            var size = ps.sizeOverLifetime;
+            size.enabled = true;
+            size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 0.6f, 1f, 2.6f));
+            var color = ps.colorOverLifetime;
+            color.enabled = true;
+            var g = new Gradient();
+            g.SetKeys(new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(1f, 0.12f), new GradientAlphaKey(0f, 1f) });
+            color.color = g;
+            var renderer = go.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = GraphicsSettings.currentRenderPipeline != null
+                ? GraphicsSettings.currentRenderPipeline.defaultParticleMaterial : null;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            return ps;
+        }
+
+        static GameObject BuildEnemyPrefab(SurfaceProfile defaultSurface, DriverArchetype archetype, string name,
+            Color paint, float mass, float health, float powerKW, float torque)
+        {
+            var body = Mat("Enemy" + archetype + "Body", paint, 0.35f, 0.25f);
+            var panel = Mat("Enemy" + archetype + "Panel", paint * 0.88f, 0.35f, 0.25f);
+            var car = BuildCar(defaultSurface, name, false, body, panel);
+            var controller = car.GetComponent<CarController>();
+            controller.mass = mass;
+            controller.maxPowerKW = powerKW;
+            controller.maxWheelTorque = torque;
+            car.GetComponent<Rigidbody>().mass = mass;
+            car.GetComponent<CarHealth>().maxHealth = health;
+            car.GetComponent<AICarDriver>().archetype = archetype;
+            string path = Root + "/Prefabs/Enemy" + archetype + ".prefab";
+            var prefab = PrefabUtility.SaveAsPrefabAsset(car, path);
+            Object.DestroyImmediate(car);
+            return prefab;
         }
 
         static DetachablePart Bumper(string name, string label, Transform parent, Mesh mesh, Vector3 pos, float side)

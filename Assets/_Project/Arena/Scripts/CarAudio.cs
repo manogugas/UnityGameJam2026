@@ -9,6 +9,10 @@ namespace CarArena
         public CarController car;
         public CarDamage damage;
         [Range(0f, 1f)] public float volume = 0.35f;
+        [Tooltip("3D sound positioned at the car (enemies). Off = heard from inside the cabin (player).")]
+        public bool spatial;
+        public float spatialMinDistance = 6f;
+        public float spatialMaxDistance = 150f;
 
         [Header("Engine")]
         public EngineLayout engineLayout = EngineLayout.V8Crossplane;
@@ -23,6 +27,8 @@ namespace CarArena
         double squealPhase, vibratoPhase, thumpPhase;
         float lpGravel, lpGravel2, lpImpact, impactEnv, squealAmp, gravelAmp, rpmSmooth = 900f, loadSmooth;
         volatile EngineSynth engine;
+        volatile float gainL = 1f, gainR = 1f;
+        Transform listener;
         uint rng = 2463534242u;
 
         void Awake()
@@ -31,6 +37,7 @@ namespace CarArena
             source = GetComponent<AudioSource>();
             source.clip = AudioClip.Create("silence", sampleRate, 1, sampleRate, false);
             source.loop = true;
+            // Distance and panning are done in the filter (procedural audio isn't reliably spatialised).
             source.spatialBlend = 0f;
             source.playOnAwake = false;
             engine = new EngineSynth(engineLayout, sampleRate);
@@ -64,6 +71,25 @@ namespace CarArena
             }
             squeal = sq;
             gravel = gr;
+            UpdateSpatial();
+        }
+
+        void UpdateSpatial()
+        {
+            if (!spatial) { gainL = gainR = 1f; return; }
+            if (listener == null)
+            {
+                var l = FindAnyObjectByType<AudioListener>();
+                if (l != null) listener = l.transform;
+                if (listener == null) return;
+            }
+            Vector3 to = transform.position - listener.position;
+            float d = to.magnitude;
+            float gain = spatialMinDistance / Mathf.Max(d, spatialMinDistance);
+            gain *= Mathf.Clamp01((spatialMaxDistance - d) / (spatialMaxDistance * 0.3f));
+            float pan = d > 0.01f ? Mathf.Clamp(Vector3.Dot(to / d, listener.right), -1f, 1f) * 0.8f : 0f;
+            gainL = gain * Mathf.Sqrt(0.5f * (1f - pan)) * 1.414f;
+            gainR = gain * Mathf.Sqrt(0.5f * (1f + pan)) * 1.414f;
         }
 
         float Noise()
@@ -81,6 +107,7 @@ namespace CarArena
             if (impactKick > 0f) { impactEnv = Mathf.Max(impactEnv, impactKick); impactKick = 0f; }
             float impactDecay = Mathf.Exp(-6f / sampleRate);
             float limiter = limiterRpm, width = stereoWidth, engVol = engineVolume;
+            float gL = gainL, gR = gainR;
 
             for (int i = 0; i < data.Length; i += channels)
             {
@@ -116,8 +143,8 @@ namespace CarArena
                 impactEnv *= impactDecay;
 
                 float fx = squealS + gravelS + impactS;
-                float sl = Mathf.Clamp((engL + fx) * volume, -1f, 1f);
-                float sr = Mathf.Clamp((engR + fx) * volume, -1f, 1f);
+                float sl = Mathf.Clamp((engL + fx) * volume * gL, -1f, 1f);
+                float sr = Mathf.Clamp((engR + fx) * volume * gR, -1f, 1f);
                 if (channels == 1) data[i] = (sl + sr) * 0.5f;
                 else
                 {

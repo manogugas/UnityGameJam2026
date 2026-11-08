@@ -89,6 +89,42 @@ namespace CarArena
             return Finish(name, verts, uvs, tris, smooth: true);
         }
 
+        /// <summary>
+        /// Straight banked ramp along a wall. Local X runs along the wall (centred), local Z goes from the
+        /// inner edge (z=0, ground level) to the wall (z=depth, full height). Ends taper down to the ground.
+        /// </summary>
+        public static Mesh BankStrip(float length, float depth, float height, int lengthSegs, int depthSegs,
+            float taperLength, string name = "BankStrip")
+        {
+            var verts = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var tris = new List<int>();
+            for (int j = 0; j <= lengthSegs; j++)
+            {
+                float x = (j / (float)lengthSegs - 0.5f) * length;
+                float fromEnd = length * 0.5f - Mathf.Abs(x);
+                float taper = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(fromEnd / taperLength));
+                for (int i = 0; i <= depthSegs; i++)
+                {
+                    float zt = i / (float)depthSegs;
+                    var p = new Vector3(x, 0.02f + height * Mathf.Pow(zt, 1.7f) * taper, zt * depth);
+                    verts.Add(p);
+                    uvs.Add(new Vector2(p.x * 0.25f, p.z * 0.25f));
+                }
+            }
+            for (int j = 0; j < lengthSegs; j++)
+            for (int i = 0; i < depthSegs; i++)
+            {
+                int a = j * (depthSegs + 1) + i, b = a + 1, c = a + depthSegs + 1, d = c + 1;
+                tris.Add(a); tris.Add(b); tris.Add(c);
+                tris.Add(b); tris.Add(d); tris.Add(c);
+            }
+            Vector3 n = Vector3.Cross(verts[tris[1]] - verts[tris[0]], verts[tris[2]] - verts[tris[0]]);
+            if (n.y < 0f)
+                for (int t = 0; t < tris.Count; t += 3) (tris[t + 1], tris[t + 2]) = (tris[t + 2], tris[t + 1]);
+            return Finish(name, verts, uvs, tris, smooth: true);
+        }
+
         /// <summary>Ramp wedge: starts at z=0 at ground level, rises to height at z=length. Origin at the front-bottom centre.</summary>
         public static Mesh Wedge(float width, float length, float height, string name = "Wedge")
         {

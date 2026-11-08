@@ -92,6 +92,8 @@ namespace CarArena
         public float BrakeOut { get; private set; }
         public float Steer { get; private set; }
         public Rigidbody Body => rb;
+        /// <summary>Wrecked: no throttle, steering or brakes from the driver; the car just rolls to a stop.</summary>
+        public bool EngineDead { get; set; }
 
         static readonly float[] GearTopSpeed = { 0f, 11f, 19f, 28f, 38f, 48f, 60f };
         const float IdleRpm = 900f, RedlineRpm = 6800f;
@@ -143,7 +145,7 @@ namespace CarArena
                 driveType = (DriveType)(((int)driveType + 1) % 3);
                 ApplyCenterOfMass();
             }
-            if (input.ResetPressed) ResetCar();
+            if (input.ResetPressed && !EngineDead) ResetCar();
             if (input.ToggleAssistsPressed)
             {
                 tractionControl = !tractionControl;
@@ -161,8 +163,8 @@ namespace CarArena
             float dt = Time.fixedDeltaTime;
             ForwardSpeed = Vector3.Dot(rb.linearVelocity, transform.forward);
 
-            float throttleIn = input.Throttle;
-            float brakeIn = input.Brake;
+            float throttleIn = EngineDead ? 0f : input.Throttle;
+            float brakeIn = EngineDead ? 0f : input.Brake;
 
             // Gear selection: S brakes to a stop, then holding it engages reverse; W does the opposite.
             if (!ReverseGear && brakeIn > 0.1f && throttleIn < 0.1f && ForwardSpeed < 0.6f) ReverseGear = true;
@@ -202,7 +204,7 @@ namespace CarArena
 
         void UpdateSteering(float dt)
         {
-            float target = input.Steer;
+            float target = EngineDead ? 0f : input.Steer;
             bool returning = Mathf.Abs(target) < Mathf.Abs(Steer) || Mathf.Sign(target) != Mathf.Sign(Steer);
             Steer = Mathf.MoveTowards(Steer, target, (returning ? steerReturnRate : steerRate) * dt);
             float lockAngle = Mathf.Lerp(maxSteerAngle, highSpeedSteerAngle, Mathf.Abs(ForwardSpeed) / steerSpeedRef);
@@ -271,7 +273,8 @@ namespace CarArena
             if (drivenSpeed > limit) torque = 0f;
             float total = torque * ThrottleOut * (ReverseGear ? -1f : 1f);
 
-            bool hand = input.Handbrake;
+            bool hand = !EngineDead && input.Handbrake;
+            if (EngineDead) BrakeOut = Mathf.Max(BrakeOut, 0.12f); // seized, dragging wreck
             if (tcFactor == null || tcFactor.Length != wheels.Length)
             {
                 tcFactor = new float[wheels.Length];
@@ -339,7 +342,8 @@ namespace CarArena
             float target = IdleRpm + speed / GearTopSpeed[Gear] * (RedlineRpm - IdleRpm);
             target = Mathf.Max(target, IdleRpm + ThrottleOut * (Gear == 1 ? 2200f : 600f));
             target = Mathf.Min(target, RedlineRpm + 200f);
-            Rpm = Mathf.Lerp(Rpm, target, 1f - Mathf.Exp(-dt * 12f));
+            if (EngineDead) target = 0f; // engine stalls: the synth stops firing
+            Rpm = Mathf.Lerp(Rpm, target, 1f - Mathf.Exp(-dt * (EngineDead ? 3f : 12f)));
         }
 
         public void ResetCar()
