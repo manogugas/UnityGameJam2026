@@ -1012,6 +1012,7 @@ namespace CarArena.EditorTools
             health.car = controller;
             health.damage = damage;
             health.isPlayer = player;
+            health.incomingDamageScale = player ? 0.8f : 1f;
             health.displayName = player ? "You" : name;
             health.smoke = EngineSmoke(t);
 

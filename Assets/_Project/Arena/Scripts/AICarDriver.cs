@@ -24,7 +24,11 @@ namespace CarArena
         [Header("Targeting")]
         public ArenaDirector director;
         [Tooltip("Metres subtracted from the player's distance when choosing a target (favour the player).")]
-        public float playerBias = 12f;
+        public float playerBias = 4f;
+        [Tooltip("Metres added to a target's score for every other car already chasing it (spreads the fight).")]
+        public float crowdingPenalty = 18f;
+        [Tooltip("At most this many bots chase the player at once (revenge ignores the cap).")]
+        public int maxPlayerAttackers = 2;
         [Tooltip("Metres subtracted from the distance of whoever hit us last.")]
         public float revengeBias = 35f;
         public float revengeTime = 6f;
@@ -144,9 +148,12 @@ namespace CarArena
             foreach (var c in director.Combatants)
             {
                 if (c == null || c == health || c.IsDead) continue;
-                float score = Flat(c.transform.position - myPos).magnitude;
+                bool revenge = c == lastAttacker && Time.time - lastAttackedTime < revengeTime;
+                int chasers = director.AttackersOf(c, this);
+                if (c.isPlayer && !revenge && c != targetHealth && chasers >= maxPlayerAttackers) continue;
+                float score = Flat(c.transform.position - myPos).magnitude + chasers * crowdingPenalty;
                 if (c.isPlayer) score -= playerBias;
-                if (c == lastAttacker && Time.time - lastAttackedTime < revengeTime) score -= revengeBias;
+                if (revenge) score -= revengeBias;
                 if (c == targetHealth) currentScore = score;
                 if (score < bestScore) { bestScore = score; best = c; }
             }

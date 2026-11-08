@@ -88,7 +88,6 @@ namespace CarArena
             if (driver != null)
             {
                 driver.director = this;
-                driver.SetTarget(player);
                 driver.Hold();
             }
             WatchForCrowd(go);
@@ -114,6 +113,19 @@ namespace CarArena
             t = 0f;
             while (!gate.IsFullyClosed && t < 5f) { t += Time.deltaTime; yield return null; }
             gate.Busy = false;
+        }
+
+        /// <summary>How many bots (other than <paramref name="except"/>) are currently chasing this car.</summary>
+        public int AttackersOf(CarHealth target, AICarDriver except)
+        {
+            int n = 0;
+            foreach (var e in enemies)
+            {
+                if (e == null || e.IsDead) continue;
+                var ai = e.GetComponent<AICarDriver>();
+                if (ai != null && ai != except && ai.TargetHealth == target) n++;
+            }
+            return n;
         }
 
         void RebuildCombatants()

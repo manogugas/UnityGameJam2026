@@ -29,14 +29,16 @@ namespace CarArena
         public float damagePerSeverity = 65f;
         public float frontMultiplier = 0.3f;
         public float rearMultiplier = 0.85f;
-        public float sideMultiplier = 1.35f;
+        public float sideMultiplier = 1.15f;
         public float topMultiplier = 1f;
         [Tooltip("Damage multiplier for the car doing the ramming (moving into the other car faster).")]
         public float rammerMultiplier = 0.45f;
         [Tooltip("Damage multiplier for the car being rammed.")]
-        public float rammedMultiplier = 1.15f;
+        public float rammedMultiplier = 1f;
         [Tooltip("Closing speed difference (m/s) that decides who is the rammer.")]
         public float rammingMargin = 1.5f;
+        [Tooltip("Scales all damage this car takes (the player gets a small buffer).")]
+        public float incomingDamageScale = 1f;
         [Tooltip("Seconds a hit from another car still counts as the kill.")]
         public float killCreditTime = 5f;
 
@@ -99,7 +101,7 @@ namespace CarArena
                 lastAttacker = attacker;
                 lastAttackTime = Time.time;
             }
-            ApplyDamage(info.severity * damagePerSeverity * zone * RammingFactor(info), info.worldPoint, attacker);
+            ApplyDamage(info.severity * damagePerSeverity * zone * RammingFactor(info) * incomingDamageScale, info.worldPoint, attacker);
         }
 
         /// <summary>
