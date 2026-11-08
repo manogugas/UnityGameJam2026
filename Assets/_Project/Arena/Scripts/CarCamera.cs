@@ -6,6 +6,8 @@ namespace CarArena
     /// Driver's-eye camera: Q/E look left/right, Alt looks back, reversing turns the head to the rear window.
     /// Adds g-force head lean and impact shake.
     /// </summary>
+    // Runs before the Cinemachine brain so the driver camera reads this frame's head pose.
+    [DefaultExecutionOrder(-200)]
     public class CarCamera : MonoBehaviour
     {
         public CarController car;

@@ -36,7 +36,25 @@ namespace CarArena
         public float excitementDecay = 0.45f;
         [Range(0f, 1f)] public float idleExcitement = 0.08f;
 
-        [Header("Sound")]
+        [Header("Recorded ambience")]
+        public AudioClip crowdLoop;
+        public AudioClip ambientLoop;
+        [Range(0f, 1f)] public float crowdVolume = 0.45f;
+        [Tooltip("Extra crowd volume at full excitement (big crash, kill).")]
+        [Range(0f, 1f)] public float cheerBoost = 0.45f;
+        [Range(0f, 1f)] public float ambientVolume = 0.3f;
+
+        [Header("Heard from inside the car")]
+        [Tooltip("0 = outside (intro cameras), 1 = inside the cabin. Set with SetCabin().")]
+        [Range(0f, 1f)] public float cabin = 1f;
+        [Tooltip("Volume multiplier inside the cabin.")]
+        [Range(0f, 1f)] public float cabinVolume = 0.4f;
+        [Tooltip("Low-pass cutoff inside the cabin (body panels and glass block the highs).")]
+        public float cabinCutoff = 1100f;
+        public float cabinFadeTime = 1.2f;
+
+        [Header("Procedural crowd (optional layer)")]
+        public bool useSynth;
         [Range(0f, 2f)] public float volume = 0.4f;
 
         class Chunk { public Transform t; public float phase, speed; public Vector3 basePos; }
@@ -46,17 +64,66 @@ namespace CarArena
         volatile float roar;
         int sampleRate;
         volatile CrowdSynth crowdSynth;
+        AudioSource crowdSource, ambientSource;
+        AudioLowPassFilter crowdFilter, ambientFilter;
+        float cabinTarget = 1f;
 
         void Start()
         {
             Build();
             sampleRate = AudioSettings.outputSampleRate;
-            crowdSynth = new CrowdSynth(sampleRate);
-            var src = GetComponent<AudioSource>();
-            src.clip = AudioClip.Create("silence", sampleRate, 1, sampleRate, false);
+            cabinTarget = cabin;
+            crowdSource = MakeLoop("CrowdLoop", crowdLoop, out crowdFilter);
+            ambientSource = MakeLoop("AmbientLoop", ambientLoop, out ambientFilter);
+            if (useSynth)
+            {
+                crowdSynth = new CrowdSynth(sampleRate);
+                var src = GetComponent<AudioSource>();
+                src.clip = AudioClip.Create("silence", sampleRate, 1, sampleRate, false);
+                src.loop = true;
+                src.spatialBlend = 0f;
+                src.Play();
+            }
+            ApplyMix(0f);
+        }
+
+        /// <summary>Looping 2D source on its own child (keeps it out of the procedural filter chain).</summary>
+        AudioSource MakeLoop(string name, AudioClip clip, out AudioLowPassFilter filter)
+        {
+            filter = null;
+            if (clip == null) return null;
+            var go = new GameObject(name);
+            go.transform.SetParent(transform, false);
+            var src = go.AddComponent<AudioSource>();
+            src.clip = clip;
             src.loop = true;
             src.spatialBlend = 0f;
+            src.playOnAwake = false;
+            filter = go.AddComponent<AudioLowPassFilter>();
+            // Start each loop at a random point so the two never line up the same way.
+            src.time = Random.Range(0f, clip.length * 0.9f);
             src.Play();
+            return src;
+        }
+
+        /// <summary>Inside the car (muffled, quieter) or outside (intro cameras).</summary>
+        public void SetCabin(bool inside) => cabinTarget = inside ? 1f : 0f;
+
+        void ApplyMix(float e)
+        {
+            float vol = Mathf.Lerp(1f, cabinVolume, cabin);
+            float cutoff = Mathf.Lerp(22000f, cabinCutoff, Mathf.Sqrt(cabin));
+            if (crowdSource != null)
+            {
+                crowdSource.volume = (crowdVolume + cheerBoost * Mathf.Clamp01(e)) * vol;
+                crowdSource.pitch = 1f + 0.04f * Mathf.Clamp01(e); // a touch more urgent when they roar
+                crowdFilter.cutoffFrequency = cutoff;
+            }
+            if (ambientSource != null)
+            {
+                ambientSource.volume = ambientVolume * vol;
+                ambientFilter.cutoffFrequency = cutoff;
+            }
         }
 
         /// <summary>0..1 how exciting the moment was (a big crash = ~1).</summary>
@@ -150,6 +217,8 @@ namespace CarArena
                 c.t.localPosition = c.basePos + Vector3.up * bounce;
             }
             roar = e;
+            cabin = Mathf.MoveTowards(cabin, cabinTarget, Time.deltaTime / Mathf.Max(0.01f, cabinFadeTime));
+            ApplyMix(excitement);
         }
 
         void OnDestroy()
@@ -165,7 +234,7 @@ namespace CarArena
         void OnAudioFilterRead(float[] data, int channels)
         {
             var synth = crowdSynth;
-            if (synth == null) return;
+            if (synth == null || !useSynth) return;
             synth.excitement = roar;
             float vol = volume;
             for (int i = 0; i < data.Length; i += channels)

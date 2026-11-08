@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 using TMPro;
+using Unity.Cinemachine;
 
 namespace CarArena.EditorTools
 {
@@ -41,6 +42,9 @@ namespace CarArena.EditorTools
         static Material mStone, mStone2, mGate, mClothRed, mClothPurple, mSkin;
         static Material[] mCrowd;
         static Material mHealthFill, mWarnLamp;
+        const string AudioDir = Root + "/Audio";
+        static AudioClip[] crashClips;
+        static AudioClip crowdLoopClip, ambientLoopClip;
         static Material mBody, mPanel, mTrim, mInterior, mSeat, mGlass, mCrack, mMirror, mGauge, mBed, mGaugeFace, mNeedle, mRedline;
         static Mesh unitCube;
         static PhysicsMaterial carPhysMat;
@@ -53,6 +57,7 @@ namespace CarArena.EditorTools
             AssetDatabase.Refresh();
 
             CreateMaterials();
+            LoadAudio();
             var asphalt = Surface("Asphalt", s =>
             {
                 s.displayName = "Asphalt"; s.grip = 1.2f; s.slideGrip = 0.88f; s.peakSlipRatio = 0.1f;
@@ -168,6 +173,38 @@ namespace CarArena.EditorTools
             }
             mCrack.SetColor("_BaseColor", new Color(0.05f, 0.05f, 0.05f));
             EditorUtility.SetDirty(mCrack);
+        }
+
+        /// <summary>Picks up the recorded clips (if present) and sets sensible import settings for them.</summary>
+        static void LoadAudio()
+        {
+            var crashes = new System.Collections.Generic.List<AudioClip>();
+            foreach (var guid in AssetDatabase.FindAssets("t:AudioClip", new[] { AudioDir + "/SFX/Car" }))
+            {
+                var clip = AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid));
+                if (clip != null && clip.name.StartsWith("Break")) crashes.Add(clip);
+            }
+            crashes.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+            crashClips = crashes.ToArray();
+            crowdLoopClip = LoadLoop(AudioDir + "/Music/Ambient/Big Crowd Loop.wav");
+            ambientLoopClip = LoadLoop(AudioDir + "/Music/Ambient/Town Square Loop.wav");
+        }
+
+        /// <summary>Long ambience loops stream as Vorbis instead of sitting decompressed in memory.</summary>
+        static AudioClip LoadLoop(string path)
+        {
+            var importer = AssetImporter.GetAtPath(path) as AudioImporter;
+            if (importer == null) return null;
+            var settings = importer.defaultSampleSettings;
+            if (settings.loadType != AudioClipLoadType.Streaming || settings.compressionFormat != AudioCompressionFormat.Vorbis)
+            {
+                settings.loadType = AudioClipLoadType.Streaming;
+                settings.compressionFormat = AudioCompressionFormat.Vorbis;
+                settings.quality = 0.6f;
+                importer.defaultSampleSettings = settings;
+                importer.SaveAndReimport();
+            }
+            return AssetDatabase.LoadAssetAtPath<AudioClip>(path);
         }
 
         static Material Mat(string name, Color c, float smooth, float metal = 0f)
@@ -565,6 +602,8 @@ namespace CarArena.EditorTools
             crowd.firstRowTop = StandFirstTop;
             crowd.rowRise = StandRise;
             crowd.rows = StandRows;
+            crowd.crowdLoop = crowdLoopClip;
+            crowd.ambientLoop = ambientLoopClip;
             crowd.exclusions = new[] { new Bounds(new Vector3(0f, 10f, first + 3.25f), new Vector3(14.5f, 30f, 7f)) };
         }
 
@@ -589,20 +628,117 @@ namespace CarArena.EditorTools
             return director;
         }
 
+        static NoiseSettings Noise(string preset) =>
+            AssetDatabase.LoadAssetAtPath<NoiseSettings>($"Packages/com.unity.cinemachine/Presets/Noise/{preset}.asset");
+
+        static CinemachineCamera VCam(string name, Transform parent, float fov, string noise, float amplitude, float frequency)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            var cam = go.AddComponent<CinemachineCamera>();
+            var lens = LensSettings.Default;
+            lens.FieldOfView = fov;
+            lens.NearClipPlane = 0.1f;
+            lens.FarClipPlane = 900f;
+            cam.Lens = lens;
+            cam.Priority.Value = 0;
+            if (noise != null)
+            {
+                var perlin = go.AddComponent<CinemachineBasicMultiChannelPerlin>();
+                perlin.NoiseProfile = Noise(noise);
+                perlin.AmplitudeGain = amplitude;
+                perlin.FrequencyGain = frequency;
+            }
+            return cam;
+        }
+
+        static CinemachineBlendDefinition Blend(CinemachineBlendDefinition.Styles style, float time) => new CinemachineBlendDefinition(style, time);
+
         static void BuildIntro(GameObject playerCar, ArenaGate playerGate, ArenaDirector director)
         {
+            var carT = playerCar.transform;
+            var driverCam = playerCar.GetComponentInChildren<CinemachineCamera>();
+
+            // Blends between the shots: a long swoop from the orbit down to the gate, then shorter moves.
+            string blendsPath = Root + "/Settings/IntroBlends.asset";
+            Directory.CreateDirectory(Root + "/Settings");
+            var blends = AssetDatabase.LoadAssetAtPath<CinemachineBlenderSettings>(blendsPath);
+            if (blends == null)
+            {
+                blends = ScriptableObject.CreateInstance<CinemachineBlenderSettings>();
+                AssetDatabase.CreateAsset(blends, blendsPath);
+            }
+            blends.CustomBlends = new[]
+            {
+                new CinemachineBlenderSettings.CustomBlend { From = "CM Overview", To = "CM Gate", Blend = Blend(CinemachineBlendDefinition.Styles.EaseInOut, 2.6f) },
+                new CinemachineBlenderSettings.CustomBlend { From = "CM Gate", To = "CM Chase", Blend = Blend(CinemachineBlendDefinition.Styles.EaseInOut, 1.3f) },
+                new CinemachineBlenderSettings.CustomBlend { From = "CM Chase", To = "CM Driver", Blend = Blend(CinemachineBlendDefinition.Styles.EaseInOut, 1.8f) },
+                new CinemachineBlenderSettings.CustomBlend { From = "CM Gate", To = "CM Driver", Blend = Blend(CinemachineBlendDefinition.Styles.EaseInOut, 2f) },
+            };
+            EditorUtility.SetDirty(blends);
+
+            // The one real camera: renders whichever Cinemachine camera is live, and carries the audio listener.
+            var mainGo = new GameObject("Main Camera");
+            mainGo.tag = "MainCamera";
+            var unityCam = mainGo.AddComponent<Camera>();
+            unityCam.nearClipPlane = 0.03f;
+            unityCam.farClipPlane = 900f;
+            unityCam.fieldOfView = 70f;
+            mainGo.AddComponent<AudioListener>();
+            var brain = mainGo.AddComponent<CinemachineBrain>();
+            brain.UpdateMethod = CinemachineBrain.UpdateMethods.LateUpdate;
+            brain.DefaultBlend = Blend(CinemachineBlendDefinition.Styles.EaseInOut, 1.5f);
+            brain.CustomBlends = blends;
+
             var go = new GameObject("Intro");
-            var cam = go.AddComponent<Camera>();
-            cam.depth = 1f;
-            cam.fieldOfView = 55f;
-            cam.nearClipPlane = 0.1f;
-            cam.farClipPlane = 900f;
+            var centre = Empty("ArenaCentre", go.transform, new Vector3(0f, 6f, 0f)).transform;
+
+            // 1. Orbit over the arena.
+            var overview = VCam("CM Overview", go.transform, 50f, "Handheld_wideangle_mild", 0.8f, 0.5f);
+            overview.Follow = centre;
+            overview.LookAt = centre;
+            var orbit = overview.gameObject.AddComponent<CinemachineOrbitalFollow>();
+            orbit.OrbitStyle = CinemachineOrbitalFollow.OrbitStyles.Sphere;
+            orbit.Radius = 125f;
+            orbit.VerticalAxis.Value = 26f;
+            orbit.HorizontalAxis.Value = 200f;
+            overview.gameObject.AddComponent<CinemachineRotationComposer>();
+            overview.Priority.Value = 100; // live from the first frame
+
+            // 2. Tele shot of the gate, tracking the car as it rolls out.
+            Transform g = playerGate.transform;
+            var gate = VCam("CM Gate", go.transform, 40f, "Handheld_tele_mild", 1f, 0.8f);
+            gate.transform.SetPositionAndRotation(g.position + g.forward * 24f + g.right * 10f + Vector3.up * 3.2f,
+                Quaternion.LookRotation(g.position + Vector3.up * 2.5f - (g.position + g.forward * 24f + g.right * 10f + Vector3.up * 3.2f)));
+            gate.LookAt = carT;
+            var gateAim = gate.gameObject.AddComponent<CinemachineRotationComposer>();
+            gateAim.TargetOffset = new Vector3(0f, 0.8f, 0f);
+            gateAim.Damping = new Vector2(1.2f, 1.2f);
+            gate.gameObject.AddComponent<CinemachineImpulseListener>();
+
+            // 3. Chase camera behind the car.
+            var chase = VCam("CM Chase", go.transform, 62f, "Handheld_normal_mild", 0.6f, 1f);
+            chase.Follow = carT;
+            chase.LookAt = carT;
+            var follow = chase.gameObject.AddComponent<CinemachineFollow>();
+            follow.FollowOffset = new Vector3(0f, 2.4f, -7f);
+            follow.TrackerSettings.BindingMode = Unity.Cinemachine.TargetTracking.BindingMode.LockToTargetWithWorldUp;
+            follow.TrackerSettings.PositionDamping = new Vector3(0.8f, 0.5f, 0.9f);
+            var chaseAim = chase.gameObject.AddComponent<CinemachineRotationComposer>();
+            chaseAim.TargetOffset = new Vector3(0f, 1f, 0f);
+            chaseAim.Damping = new Vector2(0.5f, 0.5f);
+            chase.gameObject.AddComponent<CinemachineImpulseListener>();
+
             var intro = go.AddComponent<IntroCinematic>();
-            intro.introCamera = cam;
+            intro.brain = brain;
             intro.player = playerCar.GetComponent<CarController>();
             intro.playerGate = playerGate;
             intro.director = director;
             intro.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            intro.overviewCam = overview;
+            intro.gateCam = gate;
+            intro.chaseCam = chase;
+            intro.driverCam = driverCam;
         }
 
         // ---------------------------------------------------------------- car
@@ -823,13 +959,20 @@ namespace CarArena.EditorTools
             GameObject head = null;
             if (player)
             {
+                // The driver's view is a Cinemachine camera driven by CarCamera moving this transform;
+                // the scene's main camera (CinemachineBrain) renders it and blends to/from the intro shots.
                 head = Empty("DriverHead", t, new Vector3(-0.38f, 0.82f, -0.5f));
-                head.tag = "MainCamera";
-                var cam = head.AddComponent<Camera>();
-                cam.nearClipPlane = 0.03f;
-                cam.farClipPlane = 600f;
-                cam.fieldOfView = 70f;
-                head.AddComponent<AudioListener>();
+                var vcam = head.AddComponent<CinemachineCamera>();
+                vcam.name = "CM Driver";
+                var lens = LensSettings.Default;
+                lens.FieldOfView = 70f;
+                lens.NearClipPlane = 0.03f;
+                lens.FarClipPlane = 600f;
+                vcam.Lens = lens;
+                vcam.Priority.Value = 10;
+                var listener = head.AddComponent<CinemachineImpulseListener>();
+                listener.Gain = 0.6f;
+                listener.Use2DDistance = true;
             }
 
             // ---- Components
@@ -877,6 +1020,14 @@ namespace CarArena.EditorTools
             audio.car = controller;
             audio.damage = damage;
             audio.spatial = !player;
+            audio.crashClips = crashClips;
+
+            var impulse = root.AddComponent<CinemachineImpulseSource>();
+            impulse.ImpulseDefinition.ImpulseShape = CinemachineImpulseDefinition.ImpulseShapes.Bump;
+            impulse.ImpulseDefinition.ImpulseType = CinemachineImpulseDefinition.ImpulseTypes.Dissipating;
+            impulse.ImpulseDefinition.ImpulseDuration = 0.3f;
+            impulse.ImpulseDefinition.DissipationDistance = 70f;
+            root.AddComponent<CrashImpulse>().damage = damage;
 
             if (player)
             {

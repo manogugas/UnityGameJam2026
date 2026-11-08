@@ -2,8 +2,11 @@ using UnityEngine;
 
 namespace CarArena
 {
-    /// <summary>Procedural engine (EngineSynth), tyre squeal, gravel rumble, crashes (ImpactSynth) and the steam
-    /// hiss of a wrecked engine. No audio assets.</summary>
+    /// <summary>
+    /// Procedural engine (EngineSynth), tyre squeal, gravel rumble and the steam hiss of a wrecked engine,
+    /// plus recorded crash clips for impacts (on a separate 3D-capable source). ImpactSynth is an optional
+    /// procedural crash layer.
+    /// </summary>
     [RequireComponent(typeof(AudioSource))]
     public class CarAudio : MonoBehaviour
     {
@@ -14,6 +17,15 @@ namespace CarArena
         public bool spatial;
         public float spatialMinDistance = 6f;
         public float spatialMaxDistance = 150f;
+
+        [Range(0f, 1f)] public float masterGain = 1f;
+
+        [Header("Crashes")]
+        [Tooltip("Recorded crash / break clips, one is picked at random per impact.")]
+        public AudioClip[] crashClips;
+        [Range(0f, 1f)] public float crashVolume = 0.85f;
+        [Tooltip("Also layer the procedural ImpactSynth under the clips.")]
+        public bool synthCrashLayer;
 
         [Header("Engine")]
         public EngineLayout engineLayout = EngineLayout.V8Crossplane;
@@ -33,6 +45,10 @@ namespace CarArena
         volatile EngineSynth engine;
         volatile float gainL = 1f, gainR = 1f;
         Transform listener;
+        AudioSource crashSource;
+        int lastClip = -1;
+        float gainSmooth = 1f;
+        volatile float gainNow = 1f;
         uint rng = 2463534242u;
 
         void Awake()
@@ -46,6 +62,32 @@ namespace CarArena
             source.playOnAwake = false;
             engine = new EngineSynth(engineLayout, sampleRate);
             crashes = new ImpactSynth(sampleRate, (uint)Random.Range(1, int.MaxValue));
+            gainSmooth = masterGain;
+
+            // Crash clips get their own child source: the procedural filter on this object would
+            // otherwise overwrite them, and recorded clips can use Unity's real 3D audio.
+            var go = new GameObject("CrashAudio");
+            go.transform.SetParent(transform, false);
+            crashSource = go.AddComponent<AudioSource>();
+            crashSource.playOnAwake = false;
+            crashSource.rolloffMode = AudioRolloffMode.Logarithmic;
+            crashSource.minDistance = 8f;
+            crashSource.maxDistance = 220f;
+            crashSource.dopplerLevel = 0f;
+            ApplyCrashSpatial();
+        }
+
+        /// <summary>Exterior = heard from outside (intro cameras, enemies). Interior = from the driver's seat.</summary>
+        public void SetExterior(bool exterior)
+        {
+            spatial = exterior;
+            listener = null;
+            ApplyCrashSpatial();
+        }
+
+        void ApplyCrashSpatial()
+        {
+            if (crashSource != null) crashSource.spatialBlend = spatial ? 1f : 0f;
         }
 
         void OnEnable()
@@ -59,11 +101,23 @@ namespace CarArena
             if (damage != null) damage.Impact -= OnImpact;
         }
 
-        void OnImpact(ImpactInfo i) => crashes?.Trigger(0.15f + i.severity * 0.85f);
+        void OnImpact(ImpactInfo i)
+        {
+            if (synthCrashLayer) crashes?.Trigger(0.15f + i.severity * 0.85f);
+            if (crashClips == null || crashClips.Length == 0 || crashSource == null) return;
+            int pick = Random.Range(0, crashClips.Length);
+            if (crashClips.Length > 1 && pick == lastClip) pick = (pick + 1) % crashClips.Length;
+            lastClip = pick;
+            // Bigger hits: louder and slightly lower (heavier); small knocks: quieter and higher.
+            crashSource.pitch = Mathf.Lerp(1.12f, 0.9f, i.severity) * Random.Range(0.96f, 1.04f);
+            crashSource.PlayOneShot(crashClips[pick], Mathf.Lerp(0.25f, 1f, i.severity) * crashVolume * masterGain);
+        }
 
         void Update()
         {
             if (engine == null || engine.Layout != engineLayout) engine = new EngineSynth(engineLayout, sampleRate);
+            gainSmooth = Mathf.MoveTowards(gainSmooth, masterGain, Time.deltaTime * 1.5f);
+            gainNow = gainSmooth;
             rpm = car.Rpm;
             load = car.ThrottleOut;
             float sq = 0f, gr = 0f;
@@ -116,7 +170,8 @@ namespace CarArena
             var crash = crashes;
             float st = steam;
             float limiter = limiterRpm, width = stereoWidth, engVol = engineVolume;
-            float gL = gainL, gR = gainR;
+            float gm = gainNow;
+            float gL = gainL * gm, gR = gainR * gm;
 
             for (int i = 0; i < data.Length; i += channels)
             {

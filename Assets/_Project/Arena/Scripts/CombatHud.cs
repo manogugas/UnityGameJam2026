@@ -215,7 +215,9 @@ namespace CarArena
                 float age = (now - d.t0) / directionTime;
                 if (age >= 1f) { hitDirs.RemoveAt(i); continue; }
                 // Hits are relative to the car; the head may be turned, so subtract the head's yaw.
-                float headYaw = cam.transform.localEulerAngles.y;
+                float headYaw = player != null
+                    ? (Quaternion.Inverse(player.transform.rotation) * cam.transform.rotation).eulerAngles.y
+                    : 0f;
                 float a = d.angle - (headYaw > 180f ? headYaw - 360f : headYaw);
                 GUI.color = new Color(1f, 0.1f, 0.05f, (1f - age) * (0.45f + 0.55f * d.strength));
                 var m = GUI.matrix;
