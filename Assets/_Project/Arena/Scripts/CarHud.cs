@@ -81,6 +81,7 @@ namespace CarArena
             float w = Screen.width, h = Screen.height;
             DrawGameplay(w, h);
             if (debugVisible) DrawDebug(w, h);
+            else DrawKeyHint();
         }
 
         void DrawGameplay(float w, float h)
@@ -110,6 +111,18 @@ namespace CarArena
                 GUI.Label(new Rect(0, h * 0.3f, w, 80), "<color=#ff4030>WRECKED</color>", banner);
                 GUI.Label(new Rect(0, h * 0.3f + 70, w, 30), wreckedHint, centred);
             }
+        }
+
+        /// <summary>Always-on reminder of the debug and camera keys (the debug overlay's own header lists them when open).</summary>
+        void DrawKeyHint()
+        {
+            const string text = "<b>F3</b> debug menu    <b>F4</b> 3rd-person camera";
+            var old = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.6f);
+            GUI.Label(new Rect(16, 11, 500, 22), text, small);
+            GUI.color = new Color(1f, 1f, 1f, 0.8f);
+            GUI.Label(new Rect(15, 10, 500, 22), text, small);
+            GUI.color = old;
         }
 
         void DrawDebug(float w, float h)
