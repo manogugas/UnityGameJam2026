@@ -31,7 +31,7 @@ namespace CarArena
 
         [Header("Timing (s)")]
         public float overviewTime = 5.5f;
-        public float gateTime = 7f;
+        public float gateTime = 11f;
         public float chaseTime = 2.2f;
         public float handoverTime = 1.8f;
 
@@ -126,7 +126,7 @@ namespace CarArena
             float passedAt = -1f;
             for (float t = 0f; t < gateTime && !skip; t += Time.deltaTime)
             {
-                if (!rolling && t > 1.6f && (playerGate.IsFullyOpen || t > 3.5f)) { rolling = true; Drive(0.45f, 0f); }
+                if (!rolling && t > 1.6f && (playerGate.IsFullyOpen || t > 3.5f)) { rolling = true; Drive(0.6f, 0f); }
                 if (!cheered && playerGate.HasPassed(player.transform.position, 0f)) { cheered = true; if (crowd != null) crowd.Cheer(1f); }
                 if (playerGate.HasPassed(player.transform.position, 6f) && passedAt < 0f) passedAt = t;
                 if (passedAt >= 0f && t - passedAt > 0.8f) break;

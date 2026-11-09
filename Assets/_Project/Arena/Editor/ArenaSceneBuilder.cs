@@ -33,6 +33,11 @@ namespace CarArena.EditorTools
         const float GateHalfWidth = 3.5f;
         const float GateHeight = 5f;
         const float TunnelLength = 18f;
+        // Garage behind the player's gate: the tunnel opens into a workshop room (gate-local coordinates).
+        const float GarageDepth = 24f;
+        const float GarageHalfWidth = 11f;
+        const float GarageHeight = 8f;
+        const float GarageCarZ = -34f;
         static readonly Vector3[] GateSides = { Vector3.back, Vector3.left };
         // Figure-8 track on the SW-NE diagonal: loops of radius LoopRadius centred at +-(LoopOffset, LoopOffset).
         // With LoopRadius == LoopOffset the straights run along the X and Z axes and cross at 90 degrees in the
@@ -165,7 +170,19 @@ namespace CarArena.EditorTools
             mNeedle.SetColor("_EmissionColor", new Color(0.6f, 0.2f, 0.02f));
             mRedline = Mat("GaugeRedline", new Color(0.85f, 0.1f, 0.08f), 0.4f);
 
-            mGlass = Mat("CarGlass", new Color(0.7f, 0.85f, 0.95f, 0.18f), 0.95f);
+            // Car glass is unlit tinted transparency: lit glass (premultiplied, specular preserved) picked up the
+            // garage lights and ambient and turned milky, hiding the tablet held in front of the windscreen.
+            string glassPath = MatDir + "/CarGlass.mat";
+            var unlit = Shader.Find("Universal Render Pipeline/Unlit");
+            mGlass = AssetDatabase.LoadAssetAtPath<Material>(glassPath);
+            if (mGlass == null)
+            {
+                mGlass = new Material(unlit);
+                AssetDatabase.CreateAsset(mGlass, glassPath);
+            }
+            mGlass.shader = unlit;
+            mGlass.shaderKeywords = new string[0];
+            mGlass.SetColor("_BaseColor", new Color(0.55f, 0.65f, 0.72f, 0.07f));
             mGlass.SetFloat("_Surface", 1f);
             mGlass.SetFloat("_Blend", 0f);
             mGlass.SetFloat("_Cull", 0f);
@@ -178,6 +195,7 @@ namespace CarArena.EditorTools
             mGlass.SetOverrideTag("RenderType", "Transparent");
             mGlass.renderQueue = (int)RenderQueue.Transparent;
             mGlass.SetShaderPassEnabled("ShadowCaster", false);
+            EditorUtility.SetDirty(mGlass);
 
             string crackPath = MatDir + "/Crack.mat";
             mCrack = AssetDatabase.LoadAssetAtPath<Material>(crackPath);
@@ -381,7 +399,7 @@ namespace CarArena.EditorTools
             }
             // Gates on the flat sides (south, west): the player's and the enemies' entrances.
             builtGates.Clear();
-            foreach (var side in GateSides) builtGates.Add(Gate(arena, side, asphalt));
+            foreach (var side in GateSides) builtGates.Add(Gate(arena, side, asphalt, side == GateSides[0]));
 
             BuildStands(arena);
 
@@ -586,7 +604,7 @@ namespace CarArena.EditorTools
         /// Gate with a working portcullis and a tunnel behind it through the stands. Local +Z points into
         /// the arena; the wall occupies local z 0..-2 and the tunnel continues outward from there.
         /// </summary>
-        static ArenaGate Gate(Transform parent, Vector3 n, SurfaceProfile floorSurface)
+        static ArenaGate Gate(Transform parent, Vector3 n, SurfaceProfile floorSurface, bool garage = false)
         {
             var g = Empty("Gate", parent, n * ArenaHalf, Quaternion.LookRotation(-n)).transform;
             float w = GateHalfWidth;
@@ -604,7 +622,8 @@ namespace CarArena.EditorTools
             for (int s = -1; s <= 1; s += 2)
                 Prim(PrimitiveType.Cube, "TunnelWall", g, new Vector3((w + 0.25f) * s, GateHeight * 0.5f, zMid), new Vector3(0.5f, GateHeight, TunnelLength), mStone2, true);
             Prim(PrimitiveType.Cube, "TunnelRoof", g, new Vector3(0f, GateHeight + 0.25f, zMid), new Vector3(2f * w + 1f, 0.5f, TunnelLength), mStone2, true);
-            Prim(PrimitiveType.Cube, "TunnelEnd", g, new Vector3(0f, GateHeight * 0.5f, -2f - TunnelLength - 0.25f), new Vector3(2f * w + 1f, GateHeight, 0.5f), mGate, true);
+            if (garage) BuildGarageRoom(g, floorSurface);
+            else Prim(PrimitiveType.Cube, "TunnelEnd", g, new Vector3(0f, GateHeight * 0.5f, -2f - TunnelLength - 0.25f), new Vector3(2f * w + 1f, GateHeight, 0.5f), mGate, true);
             var lamp = Empty("TunnelLight", g, new Vector3(0f, GateHeight - 0.6f, -2f - TunnelLength * 0.45f)).AddComponent<Light>();
             lamp.type = LightType.Point;
             lamp.color = new Color(1f, 0.7f, 0.4f);
@@ -626,9 +645,241 @@ namespace CarArena.EditorTools
             var gate = g.gameObject.AddComponent<ArenaGate>();
             gate.portcullis = port.transform;
             gate.openHeight = GateHeight + 0.3f;
-            gate.spawnPoint = Empty("SpawnPoint", g, new Vector3(0f, 0.9f, -2f - TunnelLength + 4.5f)).transform;
+            gate.spawnPoint = Empty("SpawnPoint", g, new Vector3(0f, 0.9f, garage ? GarageCarZ : -2f - TunnelLength + 4.5f)).transform;
             gate.entryPoint = Empty("EntryPoint", g, new Vector3(0f, 0.9f, 16f)).transform;
             return gate;
+        }
+
+        /// <summary>
+        /// Workshop behind the player's gate, where you wait between matches: brick walls, timber roof,
+        /// sunlit windows with light shafts, hanging lamps, laurel banners, a car lift with a wreck on it,
+        /// shelves of parts, tool chests, a bust and a legionary's armour. The middle lane stays clear for
+        /// driving out; the tablet arm stands to the right of the car (built with the campaign).
+        /// </summary>
+        static void BuildGarageRoom(Transform g, SurfaceProfile floorSurface)
+        {
+            var room = Empty("Garage", g, Vector3.zero).transform;
+            float z0 = -2f - TunnelLength, z1 = z0 - GarageDepth, zc = (z0 + z1) * 0.5f;
+            float hw = GarageHalfWidth, h = GarageHeight, open = GateHalfWidth + 0.5f;
+
+            var brickTex = ArenaArt.Bricks();
+            var brickWide = TexMat("GarageBrickWide", brickTex, new Vector2(6f, 2f), new Color(1f, 0.95f, 0.9f));
+            var brickNarrow = TexMat("GarageBrickNarrow", brickTex, new Vector2(2f, 2f), new Color(1f, 0.95f, 0.9f));
+            var floorMat = Mat("GarageFloor", new Color(0.3f, 0.29f, 0.27f), 0.25f);
+            var wood = Mat("GarageWood", new Color(0.28f, 0.18f, 0.1f), 0.15f);
+            var redPaint = Mat("GarageRedPaint", new Color(0.62f, 0.08f, 0.06f), 0.45f, 0.2f);
+            var rust = Mat("GarageRust", new Color(0.42f, 0.24f, 0.14f), 0.1f, 0.3f);
+            var steel = Mat("GarageSteel", new Color(0.36f, 0.37f, 0.39f), 0.5f, 0.6f);
+            var yellow = Mat("GarageLine", new Color(0.85f, 0.65f, 0.1f), 0.3f);
+            var marble = Mat("GarageMarble", new Color(0.82f, 0.8f, 0.76f), 0.4f);
+            var bronze = Mat("GarageBronze", new Color(0.62f, 0.45f, 0.22f), 0.6f, 0.8f);
+            var windowGlow = GlowMat("GarageWindow", new Color(1f, 0.85f, 0.6f), new Color(2.4f, 1.8f, 1.1f), false);
+            var bulb = GlowMat("GarageBulb", new Color(1f, 0.9f, 0.7f), new Color(3f, 2.4f, 1.6f), false);
+            var bannerMat = TexMat("BannerLaurel", ArenaArt.LaurelBanner(), Vector2.one, Color.white);
+            bannerMat.SetFloat("_AlphaClip", 1f);
+            bannerMat.SetFloat("_Cutoff", 0.5f);
+            bannerMat.EnableKeyword("_ALPHATEST_ON");
+            bannerMat.SetFloat("_Cull", 0f);
+
+            // Shell
+            Tag(Prim(PrimitiveType.Cube, "Floor", room, new Vector3(0f, -0.1f, zc), new Vector3(hw * 2f + 1f, 0.2f, GarageDepth + 0.5f), floorMat, true), floorSurface);
+            foreach (float sx in new[] { -1f, 1f })
+            {
+                float segW = hw + 0.5f - open;
+                Prim(PrimitiveType.Cube, "FrontWall", room, new Vector3(sx * (open + segW * 0.5f), h * 0.5f, z0 - 0.25f), new Vector3(segW, h, 0.5f), brickNarrow, true);
+                Prim(PrimitiveType.Cube, "SideWall", room, new Vector3(sx * (hw + 0.25f), h * 0.5f, zc), new Vector3(0.5f, h, GarageDepth + 1f), brickWide, true);
+            }
+            Prim(PrimitiveType.Cube, "Lintel", room, new Vector3(0f, (GateHeight + h) * 0.5f, z0 - 0.25f), new Vector3(open * 2f, h - GateHeight, 0.5f), brickNarrow, true);
+            Prim(PrimitiveType.Cube, "BackWall", room, new Vector3(0f, h * 0.5f, z1 - 0.25f), new Vector3(hw * 2f + 1f, h, 0.5f), brickWide, true);
+            Prim(PrimitiveType.Cube, "Roof", room, new Vector3(0f, h + 0.25f, zc), new Vector3(hw * 2f + 1f, 0.5f, GarageDepth + 1f), wood, true);
+            for (float z = z0 - 2f; z > z1; z -= 3.5f)
+                Prim(PrimitiveType.Cube, "Beam", room, new Vector3(0f, h - 0.3f, z), new Vector3(hw * 2f, 0.45f, 0.35f), wood);
+            foreach (float x in new[] { -hw * 0.5f, hw * 0.5f })
+                Prim(PrimitiveType.Cube, "Purlin", room, new Vector3(x, h - 0.65f, zc), new Vector3(0.3f, 0.3f, GarageDepth), wood);
+
+            // Floor markings: lane edges for the drive out, hazard stripes at the tunnel mouth.
+            foreach (float sx in new[] { -1f, 1f })
+                Prim(PrimitiveType.Cube, "LaneLine", room, new Vector3(sx * 4.2f, 0.005f, zc), new Vector3(0.14f, 0.01f, GarageDepth - 1f), yellow);
+            for (int i = 0; i < 8; i++)
+                Prim(PrimitiveType.Cube, "Hazard", room, new Vector3(-3.5f + i, 0.006f, z0 - 0.8f), new Vector3(0.45f, 0.01f, 0.9f), yellow, false, Quaternion.Euler(0f, 35f, 0f));
+
+            // Sunlit windows high on the left wall; spot lights throw the sun patches across the floor.
+            for (int i = 0; i < 4; i++)
+            {
+                float z = z0 - 3f - i * 5.5f;
+                Prim(PrimitiveType.Cube, "Window", room, new Vector3(-hw + 0.02f, 5.6f, z), new Vector3(0.05f, 2.2f, 1.6f), windowGlow);
+                Prim(PrimitiveType.Cube, "WindowBar", room, new Vector3(-hw + 0.05f, 5.6f, z), new Vector3(0.05f, 2.2f, 0.08f), wood);
+                Prim(PrimitiveType.Cube, "WindowSill", room, new Vector3(-hw + 0.1f, 4.45f, z), new Vector3(0.2f, 0.1f, 1.8f), wood);
+                if (i % 2 == 0)
+                {
+                    var sun = Empty("WindowLight", room, new Vector3(-hw + 0.6f, 5.6f, z - 2.7f), Quaternion.Euler(52f, 90f, 0f)).AddComponent<Light>();
+                    sun.type = LightType.Spot;
+                    sun.spotAngle = 55f;
+                    sun.range = 16f;
+                    sun.intensity = 9f;
+                    sun.color = new Color(1f, 0.78f, 0.5f);
+                }
+            }
+
+            // Hanging work lamps.
+            foreach (float z in new[] { z0 - 4f, GarageCarZ + 3f, z1 + 4f })
+            {
+                foreach (float x in new[] { -6.5f, 6.5f })
+                {
+                    Prim(PrimitiveType.Cylinder, "LampCord", room, new Vector3(x, h - 0.9f, z), new Vector3(0.03f, 0.6f, 0.03f), steel);
+                    Prim(PrimitiveType.Cylinder, "LampShade", room, new Vector3(x, h - 1.6f, z), new Vector3(0.9f, 0.12f, 0.9f), steel);
+                    Prim(PrimitiveType.Sphere, "LampBulb", room, new Vector3(x, h - 1.75f, z), new Vector3(0.3f, 0.2f, 0.3f), bulb);
+                    var lamp = Empty("LampLight", room, new Vector3(x, h - 2f, z)).AddComponent<Light>();
+                    lamp.type = LightType.Point;
+                    lamp.range = 11f;
+                    lamp.intensity = 3.2f;
+                    lamp.color = new Color(1f, 0.8f, 0.55f);
+                }
+            }
+
+            // Laurel banners: over the tunnel mouth, and on the walls.
+            Banner(room, bannerMat, wood, new Vector3(0f, GateHeight + 1.55f, z0 - 0.52f), 0f, new Vector2(1.6f, 2.6f));
+            Banner(room, bannerMat, wood, new Vector3(-7.75f, 5.2f, z0 - 0.52f), 0f, new Vector2(1.8f, 3.4f));
+            Banner(room, bannerMat, wood, new Vector3(7.75f, 5.2f, z0 - 0.52f), 0f, new Vector2(1.8f, 3.4f));
+            Banner(room, bannerMat, wood, new Vector3(hw - 0.02f, 5.4f, z0 - 9f), 90f, new Vector2(1.8f, 3.4f));
+            Banner(room, bannerMat, wood, new Vector3(0f, 5.2f, z1 + 0.02f), 180f, new Vector2(2.2f, 3.8f));
+
+            // Left: car lift with a stripped wreck up on it, tool chests, a workbench.
+            var lift = Empty("CarLift", room, new Vector3(-7.6f, 0f, z0 - 5f)).transform;
+            foreach (float sx in new[] { -1f, 1f })
+            {
+                Prim(PrimitiveType.Cube, "Post", lift, new Vector3(sx * 1.9f, 2.1f, 0f), new Vector3(0.4f, 4.2f, 0.45f), redPaint);
+                Prim(PrimitiveType.Cube, "PostCap", lift, new Vector3(sx * 1.9f, 4.3f, 0f), new Vector3(0.6f, 0.2f, 0.6f), steel);
+                Prim(PrimitiveType.Cube, "LiftArm", lift, new Vector3(sx * 1.1f, 1.95f, 0f), new Vector3(1.2f, 0.12f, 3.6f), steel);
+            }
+            JunkCar(lift, new Vector3(0f, 2.05f, 0f), 0f, rust, steel, true);
+            JunkCar(room, new Vector3(-8.3f, 0f, GarageCarZ - 4f), 160f, redPaint, rust, false);
+            ToolChest(room, new Vector3(-10.3f, 0f, z0 - 10.5f), 90f, redPaint, steel);
+            ToolChest(room, new Vector3(9.6f, 0f, z0 - 12f), -90f, redPaint, steel);
+            var bench = Empty("Workbench", room, new Vector3(-10.2f, 0f, GarageCarZ + 1f), Quaternion.Euler(0f, 90f, 0f)).transform;
+            Prim(PrimitiveType.Cube, "Top", bench, new Vector3(0f, 0.95f, 0f), new Vector3(2.6f, 0.1f, 0.9f), wood);
+            foreach (float sx in new[] { -1.2f, 1.2f })
+                Prim(PrimitiveType.Cube, "Leg", bench, new Vector3(sx, 0.45f, 0f), new Vector3(0.1f, 0.9f, 0.8f), wood);
+            Prim(PrimitiveType.Cube, "Vice", bench, new Vector3(0.9f, 1.12f, 0.2f), new Vector3(0.25f, 0.25f, 0.3f), steel);
+            Prim(PrimitiveType.Cylinder, "Gear", bench, new Vector3(-0.5f, 1.04f, 0f), new Vector3(0.5f, 0.04f, 0.5f), steel);
+
+            // Shelving with parts along both walls.
+            Shelf(room, new Vector3(-10.4f, 0f, z0 - 1.6f), 90f, wood, steel, rust, 1);
+            Shelf(room, new Vector3(10.4f, 0f, z0 - 1.8f), -90f, wood, steel, rust, 2);
+            Shelf(room, new Vector3(10.4f, 0f, z0 - 7.6f), -90f, wood, steel, rust, 3);
+            Shelf(room, new Vector3(-4f, 0f, z1 + 0.6f), 0f, wood, steel, rust, 4);
+            Shelf(room, new Vector3(4f, 0f, z1 + 0.6f), 0f, wood, steel, rust, 5);
+
+            // Right: wrecked jalopy, a bust on a plinth, a legionary's armour on a stand.
+            JunkCar(room, new Vector3(8.2f, 0f, z0 - 4.6f), -25f, rust, redPaint, false);
+            var bust = Empty("Bust", room, new Vector3(5.6f, 0f, z0 - 1.4f)).transform;
+            Prim(PrimitiveType.Cube, "Plinth", bust, new Vector3(0f, 0.6f, 0f), new Vector3(0.7f, 1.2f, 0.7f), marble);
+            Prim(PrimitiveType.Cube, "Shoulders", bust, new Vector3(0f, 1.45f, 0f), new Vector3(0.8f, 0.5f, 0.4f), marble);
+            Prim(PrimitiveType.Cylinder, "Neck", bust, new Vector3(0f, 1.78f, 0f), new Vector3(0.22f, 0.12f, 0.22f), marble);
+            Prim(PrimitiveType.Sphere, "Head", bust, new Vector3(0f, 2.08f, 0f), new Vector3(0.36f, 0.44f, 0.4f), marble);
+            Prim(PrimitiveType.Cube, "Nose", bust, new Vector3(0f, 2.06f, 0.2f), new Vector3(0.07f, 0.12f, 0.08f), marble);
+            var armour = Empty("Armour", room, new Vector3(9.8f, 0f, GarageCarZ + 4.5f), Quaternion.Euler(0f, -110f, 0f)).transform;
+            Prim(PrimitiveType.Cylinder, "Pole", armour, new Vector3(0f, 0.9f, 0f), new Vector3(0.08f, 0.9f, 0.08f), wood);
+            Prim(PrimitiveType.Cylinder, "Base", armour, new Vector3(0f, 0.04f, 0f), new Vector3(0.7f, 0.04f, 0.7f), wood);
+            Prim(PrimitiveType.Cube, "Cuirass", armour, new Vector3(0f, 1.95f, 0f), new Vector3(0.62f, 0.75f, 0.36f), steel);
+            for (int i = 0; i < 4; i++)
+                Prim(PrimitiveType.Cube, "Band", armour, new Vector3(0f, 1.62f + i * 0.17f, 0.185f), new Vector3(0.64f, 0.04f, 0.02f), bronze);
+            foreach (float sx in new[] { -1f, 1f })
+                Prim(PrimitiveType.Cube, "Pauldron", armour, new Vector3(sx * 0.4f, 2.27f, 0f), new Vector3(0.28f, 0.14f, 0.4f), steel, false, Quaternion.Euler(0f, 0f, sx * -20f));
+            Prim(PrimitiveType.Sphere, "Helmet", armour, new Vector3(0f, 2.62f, 0f), new Vector3(0.4f, 0.42f, 0.44f), bronze);
+            Prim(PrimitiveType.Cube, "Crest", armour, new Vector3(0f, 2.9f, -0.02f), new Vector3(0.08f, 0.22f, 0.5f), redPaint);
+            Prim(PrimitiveType.Cube, "CheekGuards", armour, new Vector3(0f, 2.5f, 0.14f), new Vector3(0.42f, 0.18f, 0.08f), bronze);
+
+            // Loose bits on the floor: tyre stacks, barrels, crates, engine blocks.
+            foreach (var pos in new[] { new Vector3(-5.3f, 0f, z0 - 1.2f), new Vector3(5f, 0f, z0 - 9.5f), new Vector3(-5.2f, 0f, z1 + 2.2f) })
+                for (int k = 0; k < 3; k++)
+                    Prim(PrimitiveType.Cylinder, "Tyre", room, pos + Vector3.up * (0.15f + k * 0.3f), new Vector3(0.75f, 0.15f, 0.75f), mTyre);
+            foreach (var pos in new[] { new Vector3(6.8f, 0f, GarageCarZ + 0.2f), new Vector3(7.5f, 0f, GarageCarZ - 0.6f), new Vector3(-6.2f, 0f, z0 - 11f) })
+                Prim(PrimitiveType.Cylinder, "Barrel", room, pos + Vector3.up * 0.55f, new Vector3(0.6f, 0.55f, 0.6f), pos.x > 0f ? redPaint : steel);
+            foreach (var pos in new[] { new Vector3(-6.5f, 0f, z0 - 1.4f), new Vector3(9.4f, 0f, z1 + 2f), new Vector3(8.5f, 0f, z1 + 2.2f) })
+                Prim(PrimitiveType.Cube, "Crate", room, pos + Vector3.up * 0.45f, Vector3.one * 0.9f, mCrate, false, Quaternion.Euler(0f, pos.x * 13f, 0f));
+            foreach (var pos in new[] { new Vector3(-6.2f, 0f, z0 - 7.6f), new Vector3(6.6f, 0f, z0 - 13f) })
+                EngineBlock(room, pos, steel, rust);
+        }
+
+        static Material TexMat(string name, Texture2D tex, Vector2 tiling, Color tint)
+        {
+            var m = Mat(name, tint, 0.15f);
+            m.SetTexture("_BaseMap", tex);
+            m.SetTextureScale("_BaseMap", tiling);
+            EditorUtility.SetDirty(m);
+            return m;
+        }
+
+        static void Banner(Transform parent, Material mat, Material rod, Vector3 pos, float yaw, Vector2 size)
+        {
+            var root = Empty("Banner", parent, pos, Quaternion.Euler(0f, yaw, 0f)).transform;
+            var q = Prim(PrimitiveType.Quad, "Cloth", root, Vector3.zero, new Vector3(size.x, size.y, 1f), mat);
+            q.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.TwoSided;
+            Prim(PrimitiveType.Cylinder, "Rod", root, new Vector3(0f, size.y * 0.5f + 0.02f, -0.03f), new Vector3(0.06f, size.x * 0.56f, 0.06f), rod,
+                false, Quaternion.Euler(0f, 0f, 90f));
+        }
+
+        /// <summary>Boxy old car (decor only, no colliders). Stripped = no doors/glass, wheels missing.</summary>
+        static void JunkCar(Transform parent, Vector3 pos, float yaw, Material body, Material trim, bool stripped)
+        {
+            var root = Empty("JunkCar", parent, pos, Quaternion.Euler(0f, yaw, 0f)).transform;
+            float lift = stripped ? 0.05f : 0.32f;
+            Prim(PrimitiveType.Cube, "Lower", root, new Vector3(0f, lift + 0.35f, 0f), new Vector3(1.8f, 0.6f, 4.3f), body);
+            Prim(PrimitiveType.Cube, "Cabin", root, new Vector3(0f, lift + 0.95f, -0.35f), new Vector3(1.6f, 0.6f, 2f), stripped ? trim : body);
+            Prim(PrimitiveType.Cube, "Bumper", root, new Vector3(0f, lift + 0.2f, 2.2f), new Vector3(1.85f, 0.18f, 0.15f), trim);
+            if (!stripped)
+            {
+                Prim(PrimitiveType.Cube, "Glass", root, new Vector3(0f, lift + 0.95f, 0.66f), new Vector3(1.5f, 0.5f, 0.04f), mGlass, false, Quaternion.Euler(-30f, 0f, 0f));
+                foreach (var w in new[] { new Vector3(-0.85f, 0f, 1.35f), new Vector3(0.85f, 0f, 1.35f), new Vector3(-0.85f, 0f, -1.35f) })
+                    Prim(PrimitiveType.Cylinder, "Wheel", root, w + Vector3.up * 0.34f, new Vector3(0.66f, 0.12f, 0.66f), mTyre, false, Quaternion.Euler(0f, 0f, 90f));
+                Prim(PrimitiveType.Cube, "Hood", root, new Vector3(0.1f, lift + 0.95f, 1.3f), new Vector3(1.6f, 0.05f, 1.3f), body, false, Quaternion.Euler(-35f, 8f, 0f));
+            }
+        }
+
+        static void ToolChest(Transform parent, Vector3 pos, float yaw, Material paint, Material steel)
+        {
+            var root = Empty("ToolChest", parent, pos, Quaternion.Euler(0f, yaw, 0f)).transform;
+            Prim(PrimitiveType.Cube, "Body", root, new Vector3(0f, 0.55f, 0f), new Vector3(1.3f, 1.1f, 0.6f), paint);
+            for (int i = 0; i < 5; i++)
+                Prim(PrimitiveType.Cube, "Handle", root, new Vector3(0f, 0.25f + i * 0.2f, 0.31f), new Vector3(0.9f, 0.03f, 0.03f), steel);
+            Prim(PrimitiveType.Cube, "Top", root, new Vector3(0f, 1.32f, 0f), new Vector3(1.2f, 0.42f, 0.5f), paint);
+        }
+
+        static void Shelf(Transform parent, Vector3 pos, float yaw, Material wood, Material steel, Material rust, int seed)
+        {
+            var root = Empty("Shelf", parent, pos, Quaternion.Euler(0f, yaw, 0f)).transform;
+            var rng = new System.Random(seed * 97);
+            foreach (float sx in new[] { -1.45f, 1.45f })
+                Prim(PrimitiveType.Cube, "Upright", root, new Vector3(sx, 1.5f, 0f), new Vector3(0.08f, 3f, 0.6f), wood);
+            for (int level = 0; level < 4; level++)
+            {
+                float y = 0.2f + level * 0.85f;
+                Prim(PrimitiveType.Cube, "Board", root, new Vector3(0f, y, 0f), new Vector3(3f, 0.06f, 0.6f), wood);
+                float x = -1.25f;
+                while (x < 1.2f)
+                {
+                    float wdt = 0.25f + (float)rng.NextDouble() * 0.4f;
+                    float hgt = 0.2f + (float)rng.NextDouble() * 0.45f;
+                    int kind = rng.Next(3);
+                    var m = kind == 0 ? steel : kind == 1 ? rust : mCrate;
+                    if (kind == 2 && rng.Next(2) == 0)
+                        Prim(PrimitiveType.Cylinder, "Part", root, new Vector3(x + wdt * 0.5f, y + hgt * 0.5f + 0.03f, 0f), new Vector3(wdt, hgt * 0.5f, wdt), steel);
+                    else
+                        Prim(PrimitiveType.Cube, "Part", root, new Vector3(x + wdt * 0.5f, y + hgt * 0.5f + 0.03f, 0f), new Vector3(wdt * 0.9f, hgt, 0.45f), m);
+                    x += wdt + 0.06f;
+                }
+            }
+        }
+
+        static void EngineBlock(Transform parent, Vector3 pos, Material steel, Material rust)
+        {
+            var root = Empty("EngineBlock", parent, pos, Quaternion.Euler(0f, pos.z * 17f, 0f)).transform;
+            Prim(PrimitiveType.Cube, "Pallet", root, new Vector3(0f, 0.06f, 0f), new Vector3(1.2f, 0.12f, 1f), mCrate);
+            Prim(PrimitiveType.Cube, "Block", root, new Vector3(0f, 0.45f, 0f), new Vector3(0.7f, 0.6f, 0.8f), steel);
+            Prim(PrimitiveType.Cube, "Head", root, new Vector3(0f, 0.85f, 0f), new Vector3(0.55f, 0.2f, 0.85f), rust);
+            for (int i = 0; i < 4; i++)
+                Prim(PrimitiveType.Cylinder, "Pipe", root, new Vector3(0.38f, 0.6f, -0.3f + i * 0.2f), new Vector3(0.07f, 0.12f, 0.07f), rust, false, Quaternion.Euler(0f, 0f, 90f));
         }
 
         /// <summary>Tiered stone seating on all four sides, a colonnade with banners on top, and the emperor's box.</summary>
@@ -1154,7 +1405,6 @@ namespace CarArena.EditorTools
 
                 root.AddComponent<CombatHud>().player = health;
                 BuildUpgradeVisuals(root, bodyRoot, hoodHinge.transform, controller, health);
-                BuildTablet(t);
 
                 // Health gauge in the middle of the dashboard, right of the steering wheel.
                 var hg = Empty("HealthGauge", dash.transform, new Vector3(0.03f, 0.045f, -0.2285f));
@@ -1411,23 +1661,88 @@ namespace CarArena.EditorTools
         }
 
         /// <summary>The tablet the driver holds up in front of the windscreen (screen built at runtime by TabletUI).</summary>
-        static void BuildTablet(Transform car)
+        /// <summary>
+        /// Rugged workshop tablet held by a floor-standing arm to the right of the parked car. The arm swings
+        /// it out in front of the windscreen (TabletArm). Tablet = UI layer, so the garage camera's feed
+        /// doesn't show it.
+        /// </summary>
+        static TabletArm BuildTabletArm(GameObject playerCar, ArenaGate playerGate)
         {
-            const int uiLayer = 5; // built-in "UI" layer: the garage camera doesn't render it
-            // Big enough to fill most of the windscreen from the driver's seat (about 0.65 x 0.42 m).
-            var tablet = Empty("Tablet", car, new Vector3(-0.37f, 0.785f, -0.1f), Quaternion.Euler(8f, 0f, 0f));
-            Prim(PrimitiveType.Cube, "Body", tablet.transform, Vector3.zero, new Vector3(0.65f, 0.42f, 0.018f), mTrim);
-            Prim(PrimitiveType.Cube, "Grip", tablet.transform, new Vector3(0f, -0.225f, 0.01f), new Vector3(0.26f, 0.035f, 0.03f), mInterior);
+            const int uiLayer = 5;
+            var tan = Mat("ArmPaint", new Color(0.78f, 0.62f, 0.4f), 0.35f, 0.15f);
+            var dark = Mat("ArmDark", new Color(0.16f, 0.16f, 0.17f), 0.45f, 0.6f);
+            var chrome = Mat("ArmChrome", new Color(0.8f, 0.82f, 0.85f), 0.85f, 1f);
+            var bronze = Mat("GarageBronze", new Color(0.62f, 0.45f, 0.22f), 0.6f, 0.8f);
+
+            Transform g = playerGate.transform;
+            var root = new GameObject("TabletArm").transform;
+            // Beside the passenger door: the arm reaches in through the open window.
+            root.SetPositionAndRotation(g.TransformPoint(new Vector3(3.2f, 0f, GarageCarZ + 0.2f)), g.rotation);
+
+            // Pedestal + turret + shoulder
+            Prim(PrimitiveType.Cylinder, "BasePlate", root, new Vector3(0f, 0.05f, 0f), new Vector3(1.4f, 0.05f, 1.4f), dark);
+            Prim(PrimitiveType.Cylinder, "Pedestal", root, new Vector3(0f, 0.62f, 0f), new Vector3(0.75f, 0.57f, 0.75f), tan);
+            Prim(PrimitiveType.Cube, "Hazard", root, new Vector3(0f, 0.3f, 0.38f), new Vector3(0.5f, 0.2f, 0.02f), Mat("GarageLine", new Color(0.85f, 0.65f, 0.1f), 0.3f));
+            var turret = Empty("Turret", root, new Vector3(0f, 1.2f, 0f)).transform;
+            Prim(PrimitiveType.Cube, "Housing", turret, new Vector3(0f, 0.15f, 0f), new Vector3(0.8f, 0.4f, 0.8f), tan);
+            Prim(PrimitiveType.Cylinder, "ShoulderJoint", turret, new Vector3(0f, 0.35f, 0f), new Vector3(0.55f, 0.48f, 0.55f), dark, false, Quaternion.Euler(0f, 0f, 90f));
+            var shoulder = Empty("Shoulder", turret, new Vector3(0f, 0.35f, 0f)).transform;
+
+            Transform Segment(string name, float thick, float tall)
+            {
+                var seg = Empty(name, root, Vector3.zero).transform;
+                Prim(PrimitiveType.Cube, "Beam", seg, new Vector3(0f, 0f, 0.5f), new Vector3(thick, tall, 1f), tan);
+                Prim(PrimitiveType.Cylinder, "Piston", seg, new Vector3(0f, tall * 0.5f + 0.06f, 0.45f), new Vector3(0.08f, 0.38f, 0.08f), chrome, false, Quaternion.Euler(90f, 0f, 0f));
+                Prim(PrimitiveType.Cylinder, "PistonSleeve", seg, new Vector3(0f, tall * 0.5f + 0.06f, 0.2f), new Vector3(0.13f, 0.18f, 0.13f), dark, false, Quaternion.Euler(90f, 0f, 0f));
+                return seg;
+            }
+            var upper = Segment("UpperArm", 0.26f, 0.3f);
+            var fore = Segment("Forearm", 0.15f, 0.17f); // slim enough to pass the window
+            var elbow = Prim(PrimitiveType.Sphere, "ElbowJoint", root, Vector3.zero, Vector3.one * 0.36f, dark).transform;
+            var wrist = Prim(PrimitiveType.Sphere, "WristJoint", root, Vector3.zero, Vector3.one * 0.17f, dark).transform;
+            var link = Empty("WristLink", root, Vector3.zero).transform;
+            Prim(PrimitiveType.Cube, "Link", link, new Vector3(0f, 0f, 0.5f), new Vector3(0.07f, 0.07f, 1f), dark);
+
+            // Tablet: rugged frame with bronze corner bumpers, screen on the -Z face (toward the driver).
+            const float tw = 0.58f, th = 0.365f; // fits through the side window, fills the view from the seat
+            var tablet = new GameObject("Tablet").transform;
+            tablet.SetParent(root, false);
+            Prim(PrimitiveType.Cube, "Frame", tablet, Vector3.zero, new Vector3(tw, th, 0.03f), dark);
+            Prim(PrimitiveType.Cube, "BackPlate", tablet, new Vector3(0f, 0f, 0.025f), new Vector3(0.2f, 0.15f, 0.03f), tan);
+            Prim(PrimitiveType.Cube, "EdgeMount", tablet, new Vector3(tw * 0.5f + 0.02f, 0f, 0.01f), new Vector3(0.04f, 0.12f, 0.04f), tan);
+            foreach (float sx in new[] { -1f, 1f })
+                foreach (float sy in new[] { -1f, 1f })
+                    Prim(PrimitiveType.Cube, "Bumper", tablet, new Vector3(sx * (tw * 0.5f + 0.006f), sy * (th * 0.5f + 0.006f), 0.006f), new Vector3(0.032f, 0.032f, 0.036f), bronze);
             var screen = new GameObject("Screen", typeof(RectTransform));
-            screen.transform.SetParent(tablet.transform, false);
+            screen.transform.SetParent(tablet, false);
             var rt = screen.GetComponent<RectTransform>();
-            rt.sizeDelta = new Vector2(1000f, 640f);
-            rt.localPosition = new Vector3(0f, 0f, -0.0105f);
-            rt.localScale = Vector3.one * 0.0006f;
+            rt.sizeDelta = new Vector2(1600f, 1000f);
+            rt.localPosition = new Vector3(0f, 0f, -0.016f);
+            rt.localRotation = Quaternion.identity;
+            rt.localScale = Vector3.one * (tw - 0.03f) / 1600f;
             var canvas = screen.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
             screen.AddComponent<UnityEngine.UI.GraphicRaycaster>();
             foreach (var tr in tablet.GetComponentsInChildren<Transform>(true)) tr.gameObject.layer = uiLayer;
+
+            var arm = root.gameObject.AddComponent<TabletArm>();
+            arm.car = playerCar.transform;
+            arm.tablet = tablet;
+            arm.turret = turret;
+            arm.shoulder = shoulder;
+            arm.upperArm = upper;
+            arm.forearm = fore;
+            arm.elbowJoint = elbow;
+            arm.wristJoint = wrist;
+            arm.wristLink = link;
+            // Presented: square in front of the windscreen, facing the driver's eyes.
+            // Path: folded beside the pedestal -> outside the passenger window (edge-on) -> in through the
+            // window -> turned to face the driver above the steering wheel (component defaults).
+            arm.stowedPosition = new Vector3(0.5f, 1.9f, 0.9f);
+            arm.stowedEuler = new Vector3(0f, 90f, 0f);
+            // Below the sun visor (even when crash damage drops it) and above the steering wheel.
+            arm.presentedPosition = new Vector3(-0.37f, 0.757f, -0.1f);
+            return arm;
         }
 
         static void BuildCampaign(GameObject playerCar, ArenaGate playerGate, ArenaDirector director, GameObject[] enemyPrefabs)
@@ -1450,14 +1765,16 @@ namespace CarArena.EditorTools
             cam.cullingMask = ~(1 << 5);
             var garage = camGo.AddComponent<GarageCamera>();
             garage.target = playerCar.transform;
+            garage.radius = new Vector2(4.6f, 5.6f);
+            garage.height = 2.1f;
             var lightGo = new GameObject("GarageLight");
             lightGo.transform.SetPositionAndRotation(playerGate.spawnPoint.position + Vector3.up * 4.2f, Quaternion.Euler(90f, 0f, 0f));
             var light = lightGo.AddComponent<Light>();
             light.type = LightType.Spot;
             light.range = 12f;
             light.spotAngle = 80f;
-            light.intensity = 9f;
-            light.color = new Color(1f, 0.9f, 0.75f);
+            light.intensity = 7f;
+            light.color = new Color(1f, 0.88f, 0.7f);
             light.enabled = false;
             garage.showroomLight = light;
 
@@ -1465,15 +1782,21 @@ namespace CarArena.EditorTools
             var overlay = go.AddComponent<MatchSummaryUI>();
             var tabletUI = go.AddComponent<TabletUI>();
             var campaign = go.AddComponent<CampaignDirector>();
-            var tablet = playerCar.transform.Find("Tablet");
+            var arm = BuildTabletArm(playerCar, playerGate);
             tabletUI.campaign = campaign;
-            tabletUI.tablet = tablet;
-            tabletUI.canvas = tablet.GetComponentInChildren<Canvas>(true);
-            tabletUI.shownPosition = tablet.localPosition;
-            tabletUI.shownEuler = tablet.localEulerAngles;
-            tabletUI.hiddenPosition = new Vector3(-0.3f, 0.36f, 0.12f);
-            tabletUI.hiddenEuler = new Vector3(80f, 0f, 0f);
+            tabletUI.arm = arm;
+            tabletUI.canvas = arm.tablet.GetComponentInChildren<Canvas>(true);
             tabletUI.garageCamera = garage;
+            tabletUI.driverCam = playerCar.GetComponentInChildren<CinemachineCamera>();
+            tabletUI.driverHead = playerCar.GetComponentInChildren<CarCamera>();
+            tabletUI.focusFov = 70f;   // the tablet is in the cabin now: no zoom needed
+            tabletUI.focusPitch = 0f;
+            tabletUI.iconRepair = ArenaArt.IconRepair();
+            tabletUI.iconArmour = ArenaArt.IconArmour();
+            tabletUI.iconEngine = ArenaArt.IconEngine();
+            tabletUI.iconTyres = ArenaArt.IconTyres();
+            tabletUI.iconRam = ArenaArt.IconRam();
+            tabletUI.iconLaurel = ArenaArt.IconLaurel();
 
             campaign.settings = settings;
             campaign.player = playerCar.GetComponent<CarController>();

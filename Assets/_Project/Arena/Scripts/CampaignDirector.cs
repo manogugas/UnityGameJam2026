@@ -174,7 +174,14 @@ namespace CarArena
 
             bool full = !sessionIntroPlayed;
             sessionIntroPlayed = true;
-            intro.Play(full, BeginMatch);
+            StartCoroutine(DriveOut(full));
+        }
+
+        /// <summary>Let the workshop arm fold the tablet away before the car rolls (it's right in front).</summary>
+        IEnumerator DriveOut(bool fullIntro)
+        {
+            for (float t = 0f; !tablet.Stowed && t < 3f; t += Time.deltaTime) yield return null;
+            intro.Play(fullIntro, BeginMatch);
         }
 
         // ------------------------------------------------------------------ match

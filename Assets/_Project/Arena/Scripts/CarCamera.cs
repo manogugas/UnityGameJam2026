@@ -42,6 +42,9 @@ namespace CarArena
         public float joltTilt = 260f;
         public float maxJoltTilt = 9f;
 
+        /// <summary>Extra pitch (degrees, negative = look up) set by others, e.g. leaning in to read the garage tablet.</summary>
+        [System.NonSerialized] public float pitchOffset;
+
         Vector3 basePos;
         Vector3 joltPos, joltVel, tilt, tiltVel;
         float yaw, yawVel, shake;
@@ -120,7 +123,7 @@ namespace CarArena
 
             transform.localPosition = basePos + backLookOffset * backAmount + lean + shakePos + joltPos;
             transform.localRotation = Quaternion.Euler(tilt.x, tilt.y, tilt.z)
-                * Quaternion.Euler(basePitch * (1f - backAmount * 0.6f), yaw, roll) * Quaternion.Euler(shakeRot);
+                * Quaternion.Euler(basePitch * (1f - backAmount * 0.6f) + pitchOffset, yaw, roll) * Quaternion.Euler(shakeRot);
         }
     }
 }

@@ -3,7 +3,7 @@ using UnityEngine;
 namespace CarArena
 {
     /// <summary>
-    /// Slowly circles the player's car (an ellipse that fits the gate tunnel) and renders it into a
+    /// Slowly circles the player's car (an ellipse that fits the garage) and renders it into a
     /// texture shown on the tablet. Only active while the tablet is up.
     /// </summary>
     [RequireComponent(typeof(Camera))]

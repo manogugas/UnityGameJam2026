@@ -2,61 +2,100 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using TMPro;
+using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace CarArena
 {
     /// <summary>
-    /// The beat-up tablet held up in front of the windscreen between matches. Its screen is a world-space
-    /// canvas built in code: a start screen (continue / new run), the number picker, and the garage
-    /// (live 3rd-person view of your car, hull + repairs, upgrades, the upcoming match and the emperor's
-    /// lucky digit, and the button to drive out). The tablet rises from the dash when shown.
+    /// The workshop tablet a mechanical arm swings in front of the windscreen between matches (TabletArm).
+    /// Its screen is a world-space canvas built in code, styled like a rugged diagnostics unit: dark blue
+    /// glass, cyan lines, icon tabs on the left.
+    ///  - Start: continue / new run.   - Number picker.
+    ///  - Garage, WORKSHOP tab: live camera feed of your car, stat bars, and a row of cards to repair and
+    ///    buy upgrades.  NEXT MATCH tab: opponents and bounties, the emperor's mark, rewards, run stats.
+    ///  ENTER THE ARENA is always in the same spot. The screen boots up once the arm has arrived and
+    ///  blanks when it folds away; purchases flash the card and pulse the money.
     /// </summary>
     public class TabletUI : MonoBehaviour
     {
         public CampaignDirector campaign;
         public Canvas canvas;
-        [Tooltip("The tablet body that moves between the hidden and shown poses.")]
-        public Transform tablet;
-        public Vector3 shownPosition, shownEuler;
-        public Vector3 hiddenPosition, hiddenEuler;
-        public float moveTime = 0.6f;
+        public TabletArm arm;
         public GarageCamera garageCamera;
 
+        [Header("Lean in")]
+        [Tooltip("Driver camera: zooms in on the tablet while it's presented (the windscreen leaves only a short strip).")]
+        public CinemachineCamera driverCam;
+        public CarCamera driverHead;
+        public float focusFov = 44f;
+        [Tooltip("Pitch change while reading (negative = look up).")]
+        public float focusPitch = -10f;
+
+        [Header("Icons")]
+        public Sprite iconRepair;
+        public Sprite iconArmour;
+        public Sprite iconEngine;
+        public Sprite iconTyres;
+        public Sprite iconRam;
+        public Sprite iconLaurel;
+
         [Header("Colours")]
-        public Color background = new Color(0.07f, 0.08f, 0.09f);
-        public Color panel = new Color(0.13f, 0.14f, 0.16f);
-        public Color accent = new Color(1f, 0.72f, 0.2f);
-        public Color good = new Color(0.4f, 0.9f, 0.45f);
+        public Color screen = new Color(0.025f, 0.05f, 0.075f);
+        public Color panel = new Color(0.05f, 0.1f, 0.14f);
+        public Color panelLight = new Color(0.08f, 0.15f, 0.2f);
+        public Color line = new Color(0.3f, 0.8f, 1f, 0.45f);
+        public Color cyan = new Color(0.45f, 0.9f, 1f);
+        public Color gold = new Color(1f, 0.76f, 0.25f);
+        public Color good = new Color(0.4f, 0.95f, 0.55f);
         public Color bad = new Color(1f, 0.35f, 0.28f);
-        public Color muted = new Color(0.6f, 0.62f, 0.66f);
+        public Color muted = new Color(0.52f, 0.64f, 0.72f);
 
         public bool Visible { get; private set; }
+        /// <summary>The arm has folded the tablet away (safe to drive off).</summary>
+        public bool Stowed => arm == null || arm.Stowed;
 
-        GameObject startScreen, pickScreen, garageScreen;
-        TextMeshProUGUI startInfo, pickNumber, pickHint;
-        TextMeshProUGUI header, money, numberBadge, hullText, stats, matchText, luckText;
-        Image hullFill;
+        enum Tab { Workshop, Match }
+
+        class Card
+        {
+            public UpgradeType type;
+            public Image back, flash;
+            public TextMeshProUGUI title, detail, price;
+            public Image[] pips;
+            public Button buy;
+        }
+
+        CanvasGroup content;
+        TextMeshProUGUI bootText;
+        float boot;
+        GameObject startScreen, pickScreen, garageScreen, workshopTab, matchTab;
+        TextMeshProUGUI startInfo, pickNumber;
+        TextMeshProUGUI header, money, numberBadge, hullText, matchList, markText, rewardText, runText;
+        Image hullFill, tabWorkshopBar, tabMatchBar;
+        Image[] statFills = new Image[4];
+        TextMeshProUGUI[] statValues = new TextMeshProUGUI[4];
         RawImage carView;
-        Button patchButton, fullButton, fightButton;
+        Button patchButton, fullButton;
         TextMeshProUGUI patchLabel, fullLabel;
-        readonly List<(UpgradeType type, TextMeshProUGUI pips, TextMeshProUGUI text, Button buy, TextMeshProUGUI buyLabel)> upgradeRows
-            = new List<(UpgradeType, TextMeshProUGUI, TextMeshProUGUI, Button, TextMeshProUGUI)>();
-        int pickValue = 7;
-        float move; // 0 hidden .. 1 shown
+        Image repairFlash;
+        readonly List<Card> cards = new List<Card>();
+        int pickValue = 42;
+        float moneyPulse;
+        Tab tab = Tab.Workshop;
+        float baseFov = -1f;
 
         void Awake()
         {
             Build();
-            move = 0f;
-            ApplyPose();
-            tablet.gameObject.SetActive(false);
+            content.alpha = 0f;
         }
 
         void Start()
         {
             if (canvas.worldCamera == null) canvas.worldCamera = Camera.main;
+            if (driverCam != null) baseFov = driverCam.Lens.FieldOfView;
         }
 
         // ------------------------------------------------------------------ show / hide
@@ -64,28 +103,62 @@ namespace CarArena
         public void Show()
         {
             Visible = true;
-            tablet.gameObject.SetActive(true);
+            boot = 0f;
+            if (arm != null) arm.Present();
             if (canvas.worldCamera == null) canvas.worldCamera = Camera.main;
             if (garageCamera != null && garageCamera.Texture != null) carView.texture = garageCamera.Texture;
         }
 
-        public void Hide() => Visible = false;
+        public void Hide()
+        {
+            Visible = false;
+            if (arm != null) arm.Stow();
+        }
 
         void Update()
         {
-            float target = Visible ? 1f : 0f;
-            move = Mathf.MoveTowards(move, target, Time.deltaTime / Mathf.Max(0.01f, moveTime));
-            ApplyPose();
-            if (!Visible && move <= 0f && tablet.gameObject.activeSelf) tablet.gameObject.SetActive(false);
+            float dt = Time.deltaTime;
+            bool arrived = arm == null || arm.Progress > 0.97f;
+            if (Visible && arrived) boot += dt;
+            else if (!Visible) boot = 0f;
+
+            // Boot: a short splash, then the UI fades in. Blank as soon as it's told to fold away.
+            float target = Visible && boot > 0.45f ? 1f : 0f;
+            content.alpha = target > 0f ? Mathf.Clamp01((boot - 0.45f) / 0.25f) : Mathf.MoveTowards(content.alpha, 0f, dt * 6f);
+            content.interactable = content.blocksRaycasts = Visible && content.alpha > 0.5f;
+            bootText.alpha = Visible && arrived && boot < 0.7f ? Mathf.Clamp01(boot / 0.1f) * Mathf.Clamp01((0.7f - boot) / 0.2f) : 0f;
+
             if (Visible && garageCamera != null && carView.texture != garageCamera.Texture) carView.texture = garageCamera.Texture;
             if (garageScreen.activeSelf) RefreshHull();
+
+            LeanIn();
+
+            moneyPulse = Mathf.MoveTowards(moneyPulse, 0f, dt * 2.5f);
+            money.rectTransform.localScale = Vector3.one * (1f + moneyPulse * 0.15f);
+            foreach (var c in cards) FadeFlash(c.flash, dt);
+            FadeFlash(repairFlash, dt);
         }
 
-        void ApplyPose()
+        /// <summary>Zoom and tilt the driver's view onto the tablet, following the arm's progress.</summary>
+        void LeanIn()
         {
-            float k = move * move * (3f - 2f * move);
-            tablet.localPosition = Vector3.Lerp(hiddenPosition, shownPosition, k);
-            tablet.localRotation = Quaternion.Slerp(Quaternion.Euler(hiddenEuler), Quaternion.Euler(shownEuler), k);
+            float p = arm != null ? arm.Progress : (Visible ? 1f : 0f);
+            float k = p * p * (3f - 2f * p);
+            if (driverCam != null && baseFov > 0f)
+            {
+                var lens = driverCam.Lens;
+                lens.FieldOfView = Mathf.Lerp(baseFov, focusFov, k);
+                driverCam.Lens = lens;
+            }
+            if (driverHead != null) driverHead.pitchOffset = focusPitch * k;
+        }
+
+        static void FadeFlash(Image img, float dt)
+        {
+            if (img == null) return;
+            var col = img.color;
+            col.a = Mathf.MoveTowards(col.a, 0f, dt * 1.8f);
+            img.color = col;
         }
 
         // ------------------------------------------------------------------ screens
@@ -95,7 +168,7 @@ namespace CarArena
             SetScreen(startScreen);
             var r = campaign.SavedRun;
             startInfo.text = r != null
-                ? $"Saved run: car <b>#{r.carNumber}</b>   match <b>{r.matchIndex + 1}</b>   <b>${r.money}</b>   {r.wins} wins"
+                ? $"SAVED RUN   car <b>#{r.carNumber}</b>   match <b>{r.matchIndex + 1}</b>   <color=#{Hex(gold)}><b>${r.money}</b></color>   {r.wins} wins"
                 : "";
         }
 
@@ -109,6 +182,7 @@ namespace CarArena
         public void ShowGarage()
         {
             SetScreen(garageScreen);
+            SetTab(Tab.Workshop);
             Refresh();
         }
 
@@ -117,6 +191,15 @@ namespace CarArena
             startScreen.SetActive(s == startScreen);
             pickScreen.SetActive(s == pickScreen);
             garageScreen.SetActive(s == garageScreen);
+        }
+
+        void SetTab(Tab t)
+        {
+            tab = t;
+            workshopTab.SetActive(t == Tab.Workshop);
+            matchTab.SetActive(t == Tab.Match);
+            tabWorkshopBar.color = t == Tab.Workshop ? cyan : Color.clear;
+            tabMatchBar.color = t == Tab.Match ? cyan : Color.clear;
         }
 
         void UpdatePick()
@@ -133,42 +216,55 @@ namespace CarArena
             var settings = campaign.settings;
 
             int total = settings.LadderLength;
-            string matchNo = run.matchIndex < total ? $"MATCH {run.matchIndex + 1} / {total}" : "ENDLESS";
-            header.text = $"{matchNo}   <color=#{ColorUtility.ToHtmlStringRGB(accent)}>{m.name.ToUpper()}</color>";
+            string matchNo = run.matchIndex < total ? $"MATCH {run.matchIndex + 1}/{total}" : "ENDLESS";
+            header.text = $"<color=#{Hex(muted)}>{matchNo}</color>   {m.name.ToUpper()}";
             money.text = $"${run.money}";
             numberBadge.text = $"#{run.carNumber}";
-            stats.text = $"Wins {run.wins}   Kills {run.kills}" + (run.championBeaten ? "   <color=#ffd060>CHAMPION</color>" : "");
 
-            foreach (var row in upgradeRows)
+            UpgradeType[] order = { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate };
+            for (int i = 0; i < order.Length; i++)
             {
-                var track = settings.Track(row.type);
-                int level = run.Level(row.type), max = track != null ? track.MaxLevel : 0;
-                var pips = new StringBuilder();
-                pips.Append("LV ").Append(level).Append('/').Append(max);
-                row.pips.text = pips.ToString();
-                string next = track != null && level < max && track.levelText != null && level < track.levelText.Length ? track.levelText[level] : "Maxed";
-                row.text.text = $"<b>{track?.displayName}</b>\n<size=85%><color=#{ColorUtility.ToHtmlStringRGB(muted)}>{next}</color></size>";
-                int cost = campaign.UpgradeCost(row.type);
-                row.buy.interactable = cost >= 0 && run.money >= cost;
-                row.buyLabel.text = cost < 0 ? "MAX" : $"${cost}";
+                var track = settings.Track(order[i]);
+                int max = track != null ? Mathf.Max(1, track.MaxLevel) : 1;
+                int level = run.Level(order[i]);
+                statFills[i].rectTransform.anchorMax = new Vector2(Mathf.Clamp01((level + 0.0001f) / max), 1f);
+                statValues[i].text = level >= max ? "MAX" : $"LV {level}";
+            }
+
+            foreach (var c in cards)
+            {
+                var track = settings.Track(c.type);
+                int level = run.Level(c.type), max = track != null ? track.MaxLevel : 0;
+                for (int p = 0; p < c.pips.Length; p++)
+                {
+                    c.pips[p].gameObject.SetActive(p < max);
+                    c.pips[p].color = p < level ? cyan : new Color(cyan.r, cyan.g, cyan.b, 0.15f);
+                }
+                string next = track != null && level < max && track.levelText != null && level < track.levelText.Length ? track.levelText[level] : "Fully upgraded";
+                c.detail.text = next;
+                int cost = campaign.UpgradeCost(c.type);
+                bool affordable = cost >= 0 && run.money >= cost;
+                c.buy.interactable = affordable;
+                c.price.text = cost < 0 ? "MAX" : $"${cost}";
+                c.price.color = cost < 0 ? muted : affordable ? Color.black : bad;
             }
 
             var sb = new StringBuilder();
-            sb.Append($"<b>NEXT: {m.name}</b>\n");
             foreach (var e in campaign.NextEnemies)
             {
                 int bounty = settings.KillReward(e.number);
                 if (e.marked) bounty = Mathf.RoundToInt(bounty * settings.markedBountyMultiplier);
-                string star = e.marked ? $" <color=#{ColorUtility.ToHtmlStringRGB(accent)}>MARKED</color>" : "";
-                sb.Append($"{e.label}{star}  <color=#{ColorUtility.ToHtmlStringRGB(muted)}>bounty ${bounty}</color>\n");
+                string tag = e.marked ? $"  <color=#{Hex(gold)}><b>MARKED</b></color>" : "";
+                sb.Append($"<b>{e.label}</b>{tag}<pos=72%><color=#{Hex(gold)}>${bounty}</color>\n");
             }
-            sb.Append($"<color=#{ColorUtility.ToHtmlStringRGB(muted)}>Win: ${settings.WinReward(run.matchIndex)}</color>");
-            matchText.text = sb.ToString();
+            matchList.text = sb.ToString();
 
-            luckText.text = campaign.PlayerMarked
-                ? $"The emperor marks <b>#{run.markedNumber}</b>  -  YOU. Every car will hunt you. Survive for x{settings.markedSurvivalMultiplier:0.#} pay"
-                : $"The emperor marks <b>#{run.markedNumber}</b>  -  everyone hunts it, x{settings.markedBountyMultiplier:0.#} bounty";
-            luckText.color = campaign.PlayerMarked ? accent : Color.white;
+            markText.text = campaign.PlayerMarked
+                ? $"<size=130%><b>#{run.markedNumber}  -  YOU</b></size>\nEvery car will hunt you. Survive and the whole match pays x{settings.markedSurvivalMultiplier:0.#}."
+                : $"<size=130%><b>#{run.markedNumber}</b></size>\nEveryone hunts the marked car. Wreck it yourself for x{settings.markedBountyMultiplier:0.#} bounty.";
+            markText.color = campaign.PlayerMarked ? gold : Color.white;
+            rewardText.text = $"Victory pays <color=#{Hex(gold)}><b>${settings.WinReward(run.matchIndex)}</b></color>, plus the bounty for every car you wreck.";
+            runText.text = $"Wins <b>{run.wins}</b>     Kills <b>{run.kills}</b>" + (run.championBeaten ? $"     <color=#{Hex(gold)}>CHAMPION</color>" : "");
             RefreshHull();
         }
 
@@ -179,13 +275,27 @@ namespace CarArena
             float f = hp / max;
             hullFill.rectTransform.anchorMax = new Vector2(f, 1f);
             hullFill.color = Color.Lerp(bad, good, Mathf.InverseLerp(0.25f, 0.8f, f));
-            hullText.text = $"HULL  {Mathf.CeilToInt(hp)} / {Mathf.RoundToInt(max)}";
+            hullText.text = $"{Mathf.CeilToInt(hp)}/{Mathf.RoundToInt(max)}";
             bool damaged = hp < max - 0.5f;
             int patch = campaign.RepairCost(false), full = campaign.RepairCost(true);
             patchButton.interactable = damaged && campaign.Run.money >= patch;
             fullButton.interactable = damaged && campaign.Run.money >= full;
-            patchLabel.text = damaged ? $"PATCH +{campaign.settings.patchAmount}  ${patch}" : "PATCH";
-            fullLabel.text = damaged ? $"FULL REPAIR  ${full}" : "FULL REPAIR";
+            patchLabel.text = damaged ? $"PATCH +{campaign.settings.patchAmount}   ${patch}" : "PATCH";
+            fullLabel.text = damaged ? $"FULL   ${full}" : "HULL OK";
+        }
+
+        void Buy(Card c)
+        {
+            if (!campaign.BuyUpgrade(c.type)) return;
+            c.flash.color = new Color(cyan.r, cyan.g, cyan.b, 0.6f);
+            moneyPulse = 1f;
+        }
+
+        void DoRepair(bool full)
+        {
+            if (!campaign.Repair(full)) return;
+            repairFlash.color = new Color(good.r, good.g, good.b, 0.5f);
+            moneyPulse = 1f;
         }
 
         // ------------------------------------------------------------------ building
@@ -193,83 +303,213 @@ namespace CarArena
         void Build()
         {
             var root = canvas.transform;
-            Panel(root, "Background", Vector2.zero, Vector2.one, background);
+            Panel(root, "Glass", Vector2.zero, Vector2.one, screen);
+            // Faint grid on the glass.
+            var grid = Rect(root, "Grid", Vector2.zero, Vector2.one);
+            for (int i = 1; i < 16; i++) Panel(grid, "V", new Vector2(i / 16f, 0f), new Vector2(i / 16f, 1f), new Color(cyan.r, cyan.g, cyan.b, 0.035f)).rectTransform.sizeDelta = new Vector2(2f, 0f);
+            for (int i = 1; i < 10; i++) Panel(grid, "H", new Vector2(0f, i / 10f), new Vector2(1f, i / 10f), new Color(cyan.r, cyan.g, cyan.b, 0.035f)).rectTransform.sizeDelta = new Vector2(0f, 2f);
 
-            // Start screen
-            startScreen = Rect(root, "Start", Vector2.zero, Vector2.one).gameObject;
-            Text(startScreen.transform, "THE ARENA", 110, TextAlignmentOptions.Center, new Vector2(0.05f, 0.62f), new Vector2(0.95f, 0.9f), accent).fontStyle = FontStyles.Bold;
-            startInfo = Text(startScreen.transform, "", 30, TextAlignmentOptions.Center, new Vector2(0.05f, 0.48f), new Vector2(0.95f, 0.58f), Color.white);
-            Btn(startScreen.transform, "CONTINUE", new Vector2(0.2f, 0.26f), new Vector2(0.48f, 0.42f), () => campaign.ContinueRun(), accent, Color.black);
-            Btn(startScreen.transform, "NEW RUN", new Vector2(0.52f, 0.26f), new Vector2(0.8f, 0.42f), () => campaign.NewRun(), panel, Color.white);
-            Text(startScreen.transform, "Click with the mouse", 22, TextAlignmentOptions.Center, new Vector2(0.05f, 0.08f), new Vector2(0.95f, 0.16f), muted);
+            var group = Rect(root, "Content", Vector2.zero, Vector2.one);
+            content = group.gameObject.AddComponent<CanvasGroup>();
+            bootText = Text(root, "ARENA WORKSHOP OS\n<size=50%>linking to bay 1 ...</size>", 64, TextAlignmentOptions.Center, Vector2.zero, Vector2.one, cyan);
+            bootText.fontStyle = FontStyles.Bold;
+            var c = group.transform;
 
-            // Number picker
-            pickScreen = Rect(root, "PickNumber", Vector2.zero, Vector2.one).gameObject;
-            Text(pickScreen.transform, "CHOOSE YOUR NUMBER", 56, TextAlignmentOptions.Center, new Vector2(0.05f, 0.82f), new Vector2(0.95f, 0.96f), accent).fontStyle = FontStyles.Bold;
-            pickNumber = Text(pickScreen.transform, "7", 230, TextAlignmentOptions.Center, new Vector2(0.3f, 0.42f), new Vector2(0.7f, 0.82f), Color.white);
+            BuildStart(c);
+            BuildPicker(c);
+            BuildGarage(c);
+            SetScreen(startScreen);
+        }
+
+        void BuildStart(Transform c)
+        {
+            startScreen = Rect(c, "Start", Vector2.zero, Vector2.one).gameObject;
+            var s = startScreen.transform;
+            Icon(s, iconLaurel, new Vector2(0.43f, 0.66f), new Vector2(0.57f, 0.9f), gold);
+            var title = Text(s, "THE ARENA", 120, TextAlignmentOptions.Center, new Vector2(0.05f, 0.5f), new Vector2(0.95f, 0.68f), Color.white);
+            title.fontStyle = FontStyles.Bold;
+            title.characterSpacing = 12f;
+            startInfo = Text(s, "", 30, TextAlignmentOptions.Center, new Vector2(0.05f, 0.4f), new Vector2(0.95f, 0.48f), muted);
+            Btn(s, "CONTINUE", new Vector2(0.24f, 0.2f), new Vector2(0.49f, 0.34f), () => campaign.ContinueRun(), gold, Color.black);
+            Btn(s, "NEW RUN", new Vector2(0.51f, 0.2f), new Vector2(0.76f, 0.34f), () => campaign.NewRun(), panelLight, Color.white, true);
+            Text(s, "click to select", 22, TextAlignmentOptions.Center, new Vector2(0.05f, 0.06f), new Vector2(0.95f, 0.12f), muted);
+        }
+
+        void BuildPicker(Transform c)
+        {
+            pickScreen = Rect(c, "PickNumber", Vector2.zero, Vector2.one).gameObject;
+            var s = pickScreen.transform;
+            var title = Text(s, "CHOOSE YOUR NUMBER", 54, TextAlignmentOptions.Center, new Vector2(0.05f, 0.84f), new Vector2(0.95f, 0.96f), cyan);
+            title.fontStyle = FontStyles.Bold;
+            title.characterSpacing = 6f;
+            var plate = Panel(s, "Plate", new Vector2(0.36f, 0.42f), new Vector2(0.64f, 0.82f), new Color(0.93f, 0.92f, 0.88f));
+            AddOutline(plate, gold, 5f);
+            pickNumber = Text(plate.transform, "42", 250, TextAlignmentOptions.Center, Vector2.zero, Vector2.one, new Color(0.06f, 0.06f, 0.06f));
             pickNumber.fontStyle = FontStyles.Bold;
-            Btn(pickScreen.transform, "-10", new Vector2(0.05f, 0.52f), new Vector2(0.15f, 0.7f), () => Step(-10), panel, Color.white);
-            Btn(pickScreen.transform, "-1", new Vector2(0.17f, 0.52f), new Vector2(0.27f, 0.7f), () => Step(-1), panel, Color.white);
-            Btn(pickScreen.transform, "+1", new Vector2(0.73f, 0.52f), new Vector2(0.83f, 0.7f), () => Step(1), panel, Color.white);
-            Btn(pickScreen.transform, "+10", new Vector2(0.85f, 0.52f), new Vector2(0.95f, 0.7f), () => Step(10), panel, Color.white);
-            pickHint = Text(pickScreen.transform,
-                "It goes on your roof and doors (10-99). Before every match the emperor marks one car's number:\nevery car hunts the marked one. Wreck it for triple bounty - or, if it's you, survive for double pay.",
-                24, TextAlignmentOptions.Center, new Vector2(0.05f, 0.24f), new Vector2(0.95f, 0.4f), muted);
-            Btn(pickScreen.transform, "RANDOM", new Vector2(0.2f, 0.06f), new Vector2(0.45f, 0.2f), () => { pickValue = UnityEngine.Random.Range(10, 100); UpdatePick(); }, panel, Color.white);
-            Btn(pickScreen.transform, "CONFIRM", new Vector2(0.55f, 0.06f), new Vector2(0.8f, 0.2f), () => campaign.ConfirmNumber(pickValue), accent, Color.black);
+            Btn(s, "-10", new Vector2(0.06f, 0.54f), new Vector2(0.16f, 0.7f), () => Step(-10), panelLight, Color.white, true);
+            Btn(s, "-1", new Vector2(0.18f, 0.54f), new Vector2(0.3f, 0.7f), () => Step(-1), panelLight, Color.white, true);
+            Btn(s, "+1", new Vector2(0.7f, 0.54f), new Vector2(0.82f, 0.7f), () => Step(1), panelLight, Color.white, true);
+            Btn(s, "+10", new Vector2(0.84f, 0.54f), new Vector2(0.94f, 0.7f), () => Step(10), panelLight, Color.white, true);
+            Text(s, "Painted on your roof and doors. Before every match the emperor marks one car's number:\n" +
+                    "everyone hunts it. Wreck a marked car for triple bounty - or survive being marked for double pay.",
+                24, TextAlignmentOptions.Center, new Vector2(0.06f, 0.24f), new Vector2(0.94f, 0.39f), muted);
+            Btn(s, "RANDOM", new Vector2(0.24f, 0.07f), new Vector2(0.48f, 0.19f), () => { pickValue = UnityEngine.Random.Range(10, 100); UpdatePick(); }, panelLight, Color.white, true);
+            Btn(s, "CONFIRM  >", new Vector2(0.52f, 0.07f), new Vector2(0.76f, 0.19f), () => campaign.ConfirmNumber(pickValue), gold, Color.black);
+        }
 
-            // Garage
-            garageScreen = Rect(root, "Garage", Vector2.zero, Vector2.one).gameObject;
+        void BuildGarage(Transform c)
+        {
+            garageScreen = Rect(c, "Garage", Vector2.zero, Vector2.one).gameObject;
             var g = garageScreen.transform;
-            Panel(g, "HeaderBar", new Vector2(0f, 0.9f), new Vector2(1f, 1f), panel);
-            header = Text(g, "", 30, TextAlignmentOptions.Left, new Vector2(0.03f, 0.9f), new Vector2(0.7f, 1f), Color.white);
+
+            // Header bar
+            var bar = Panel(g, "Header", new Vector2(0f, 0.915f), new Vector2(1f, 1f), panel);
+            Panel(bar.transform, "Rule", new Vector2(0f, 0f), new Vector2(1f, 0f), line).rectTransform.sizeDelta = new Vector2(0f, 3f);
+            header = Text(g, "", 34, TextAlignmentOptions.Left, new Vector2(0.1f, 0.915f), new Vector2(0.62f, 1f), Color.white);
             header.fontStyle = FontStyles.Bold;
-            numberBadge = Text(g, "", 32, TextAlignmentOptions.Right, new Vector2(0.7f, 0.9f), new Vector2(0.8f, 1f), Color.white);
+            var badge = Panel(g, "Badge", new Vector2(0.66f, 0.93f), new Vector2(0.76f, 0.985f), new Color(0.93f, 0.92f, 0.88f));
+            numberBadge = Text(badge.transform, "", 34, TextAlignmentOptions.Center, Vector2.zero, Vector2.one, new Color(0.06f, 0.06f, 0.06f));
             numberBadge.fontStyle = FontStyles.Bold;
-            money = Text(g, "", 38, TextAlignmentOptions.Right, new Vector2(0.8f, 0.9f), new Vector2(0.97f, 1f), accent);
+            money = Text(g, "", 46, TextAlignmentOptions.Right, new Vector2(0.77f, 0.915f), new Vector2(0.96f, 1f), gold);
             money.fontStyle = FontStyles.Bold;
+            money.rectTransform.pivot = new Vector2(1f, 0.5f);
 
-            // Left: live car view, hull, repairs
-            Panel(g, "ViewFrame", new Vector2(0.02f, 0.33f), new Vector2(0.49f, 0.88f), Color.black);
+            // Left icon rail: tabs
+            Panel(g, "Rail", new Vector2(0f, 0f), new Vector2(0.08f, 0.915f), panel);
+            TabButton(g, iconRepair, "GARAGE", 0.8f, () => SetTab(Tab.Workshop), out tabWorkshopBar);
+            TabButton(g, iconLaurel, "MATCH", 0.6f, () => { SetTab(Tab.Match); Refresh(); }, out tabMatchBar);
+
+            BuildWorkshop(g);
+            BuildMatch(g);
+
+            // Always in the same place on both tabs.
+            var fight = Btn(g, "ENTER THE ARENA  >", new Vector2(0.69f, 0.36f), new Vector2(0.98f, 0.46f), () => campaign.StartMatch(), gold, Color.black);
+            fight.GetComponentInChildren<TextMeshProUGUI>().fontSize = 34;
+        }
+
+        void TabButton(Transform g, Sprite icon, string label, float y, Action onClick, out Image activeBar)
+        {
+            var b = Btn(g, "", new Vector2(0.008f, y - 0.075f), new Vector2(0.072f, y + 0.075f), onClick, panelLight, Color.white, true);
+            Icon(b.transform, icon, new Vector2(0.15f, 0.32f), new Vector2(0.85f, 0.92f), cyan);
+            Text(b.transform, label, 17, TextAlignmentOptions.Center, new Vector2(0f, 0.04f), new Vector2(1f, 0.3f), muted).fontStyle = FontStyles.Bold;
+            activeBar = Panel(g, "Active", new Vector2(0f, y - 0.075f), new Vector2(0.006f, y + 0.075f), cyan);
+        }
+
+        void BuildWorkshop(Transform g)
+        {
+            workshopTab = Rect(g, "Workshop", Vector2.zero, Vector2.one).gameObject;
+            var w = workshopTab.transform;
+
+            // Live camera feed with a blueprint frame.
+            var frame = Panel(w, "Feed", new Vector2(0.1f, 0.36f), new Vector2(0.67f, 0.9f), Color.black);
+            AddOutline(frame, line, 2f);
             carView = new GameObject("CarView", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
-            Place(carView.rectTransform, g, new Vector2(0.025f, 0.335f), new Vector2(0.485f, 0.875f));
-            carView.color = Color.white;
-            hullText = Text(g, "", 24, TextAlignmentOptions.Left, new Vector2(0.02f, 0.26f), new Vector2(0.49f, 0.32f), Color.white);
-            var hullBack = Panel(g, "HullBack", new Vector2(0.02f, 0.225f), new Vector2(0.49f, 0.255f), panel);
-            hullFill = Panel(hullBack.transform, "HullFill", Vector2.zero, Vector2.one, good);
-            patchButton = Btn(g, "PATCH", new Vector2(0.02f, 0.12f), new Vector2(0.25f, 0.2f), () => campaign.Repair(false), panel, Color.white);
-            patchLabel = patchButton.GetComponentInChildren<TextMeshProUGUI>();
-            fullButton = Btn(g, "FULL REPAIR", new Vector2(0.26f, 0.12f), new Vector2(0.49f, 0.2f), () => campaign.Repair(true), panel, Color.white);
-            fullLabel = fullButton.GetComponentInChildren<TextMeshProUGUI>();
-            patchLabel.fontSize = fullLabel.fontSize = 20;
+            Place(carView.rectTransform, frame.transform, new Vector2(0.005f, 0.008f), new Vector2(0.995f, 0.992f));
+            carView.color = new Color(0.82f, 0.95f, 1f);
+            carView.raycastTarget = false;
+            for (int i = 1; i < 8; i++) Panel(frame.transform, "V", new Vector2(i / 8f, 0f), new Vector2(i / 8f, 1f), new Color(cyan.r, cyan.g, cyan.b, 0.08f)).rectTransform.sizeDelta = new Vector2(2f, 0f);
+            for (int i = 1; i < 5; i++) Panel(frame.transform, "H", new Vector2(0f, i / 5f), new Vector2(1f, i / 5f), new Color(cyan.r, cyan.g, cyan.b, 0.08f)).rectTransform.sizeDelta = new Vector2(0f, 2f);
+            Brackets(frame.transform);
+            Text(frame.transform, "LIVE  BAY 1", 20, TextAlignmentOptions.TopLeft, new Vector2(0.03f, 0.84f), new Vector2(0.5f, 0.97f), cyan).fontStyle = FontStyles.Bold;
 
-            // Right top: upgrades
-            Text(g, "UPGRADES", 24, TextAlignmentOptions.Left, new Vector2(0.52f, 0.83f), new Vector2(0.98f, 0.88f), accent).fontStyle = FontStyles.Bold;
-            UpgradeType[] order = { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate };
-            for (int i = 0; i < order.Length; i++)
+            // Right column: hull + upgrade levels
+            var stats = Panel(w, "Stats", new Vector2(0.69f, 0.48f), new Vector2(0.98f, 0.9f), panel);
+            AddOutline(stats, line, 2f);
+            var st = stats.transform;
+            Text(st, "HULL", 24, TextAlignmentOptions.Left, new Vector2(0.06f, 0.82f), new Vector2(0.5f, 0.96f), muted).fontStyle = FontStyles.Bold;
+            hullText = Text(st, "", 26, TextAlignmentOptions.Right, new Vector2(0.5f, 0.82f), new Vector2(0.94f, 0.96f), Color.white);
+            hullText.fontStyle = FontStyles.Bold;
+            var hullBack = Panel(st, "HullBack", new Vector2(0.06f, 0.73f), new Vector2(0.94f, 0.81f), panelLight);
+            hullFill = Panel(hullBack.transform, "Fill", Vector2.zero, Vector2.one, good);
+            string[] names = { "ARMOUR", "ENGINE", "TYRES", "RAM" };
+            for (int i = 0; i < 4; i++)
             {
-                float top = 0.82f - i * 0.078f, bottom = top - 0.07f;
-                Panel(g, "Row", new Vector2(0.52f, bottom), new Vector2(0.98f, top), panel);
-                var text = Text(g, "", 21, TextAlignmentOptions.Left, new Vector2(0.535f, bottom), new Vector2(0.77f, top), Color.white);
-                var pips = Text(g, "", 19, TextAlignmentOptions.Right, new Vector2(0.76f, bottom), new Vector2(0.84f, top), accent);
-                var type = order[i];
-                var buy = Btn(g, "$0", new Vector2(0.85f, bottom + 0.008f), new Vector2(0.975f, top - 0.008f), () => campaign.BuyUpgrade(type), accent, Color.black);
-                var label = buy.GetComponentInChildren<TextMeshProUGUI>();
-                label.fontSize = 22;
-                upgradeRows.Add((type, pips, text, buy, label));
+                float top = 0.64f - i * 0.155f;
+                Text(st, names[i], 24, TextAlignmentOptions.Left, new Vector2(0.06f, top - 0.07f), new Vector2(0.5f, top), muted).fontStyle = FontStyles.Bold;
+                statValues[i] = Text(st, "", 24, TextAlignmentOptions.Right, new Vector2(0.5f, top - 0.07f), new Vector2(0.94f, top), cyan);
+                var back = Panel(st, "Back", new Vector2(0.06f, top - 0.115f), new Vector2(0.94f, top - 0.075f), panelLight);
+                statFills[i] = Panel(back.transform, "Fill", Vector2.zero, Vector2.one, cyan);
             }
 
-            // Right bottom: next match + the emperor's mark
-            Panel(g, "MatchPanel", new Vector2(0.52f, 0.12f), new Vector2(0.98f, 0.46f), panel);
-            matchText = Text(g, "", 21, TextAlignmentOptions.TopLeft, new Vector2(0.535f, 0.22f), new Vector2(0.97f, 0.45f), Color.white);
-            luckText = Text(g, "", 18, TextAlignmentOptions.BottomLeft, new Vector2(0.535f, 0.13f), new Vector2(0.97f, 0.22f), Color.white);
+            // Bottom row: repair + four upgrade cards
+            float x0 = 0.1f, x1 = 0.98f, gap = 0.012f;
+            float cw = (x1 - x0 - gap * 4f) / 5f;
+            RepairCard(w, new Vector2(x0, 0.03f), new Vector2(x0 + cw, 0.33f));
+            UpgradeType[] order = { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate };
+            Sprite[] icons = { iconArmour, iconEngine, iconTyres, iconRam };
+            string[] titles = { "ARMOUR", "ENGINE", "TYRES", "RAM PLATE" };
+            for (int i = 0; i < 4; i++)
+            {
+                float a = x0 + (cw + gap) * (i + 1);
+                cards.Add(UpgradeCard(w, order[i], icons[i], titles[i], new Vector2(a, 0.03f), new Vector2(a + cw, 0.33f)));
+            }
+        }
 
-            // Bottom bar
-            stats = Text(g, "", 22, TextAlignmentOptions.Left, new Vector2(0.03f, 0.015f), new Vector2(0.5f, 0.1f), muted);
-            fightButton = Btn(g, "ENTER THE ARENA  >", new Vector2(0.55f, 0.015f), new Vector2(0.98f, 0.1f), () => campaign.StartMatch(), accent, Color.black);
-            fightButton.GetComponentInChildren<TextMeshProUGUI>().fontStyle = FontStyles.Bold;
+        void RepairCard(Transform w, Vector2 min, Vector2 max)
+        {
+            var back = Panel(w, "RepairCard", min, max, panel);
+            AddOutline(back, line, 2f);
+            var t = back.transform;
+            Icon(t, iconRepair, new Vector2(0.05f, 0.66f), new Vector2(0.32f, 0.95f), cyan);
+            Text(t, "REPAIR", 27, TextAlignmentOptions.Left, new Vector2(0.36f, 0.72f), new Vector2(0.98f, 0.93f), Color.white).fontStyle = FontStyles.Bold;
+            patchButton = Btn(t, "PATCH", new Vector2(0.06f, 0.37f), new Vector2(0.94f, 0.6f), () => DoRepair(false), panelLight, Color.white, true);
+            patchLabel = patchButton.GetComponentInChildren<TextMeshProUGUI>();
+            fullButton = Btn(t, "FULL", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.3f), () => DoRepair(true), panelLight, Color.white, true);
+            fullLabel = fullButton.GetComponentInChildren<TextMeshProUGUI>();
+            patchLabel.fontSize = fullLabel.fontSize = 22;
+            repairFlash = Panel(t, "Flash", Vector2.zero, Vector2.one, Color.clear);
+        }
 
-            SetScreen(startScreen);
+        Card UpgradeCard(Transform w, UpgradeType type, Sprite icon, string title, Vector2 min, Vector2 max)
+        {
+            var card = new Card { type = type };
+            card.back = Panel(w, "Card", min, max, panel);
+            AddOutline(card.back, line, 2f);
+            var t = card.back.transform;
+            Icon(t, icon, new Vector2(0.05f, 0.66f), new Vector2(0.32f, 0.95f), cyan);
+            card.title = Text(t, title, 27, TextAlignmentOptions.Left, new Vector2(0.36f, 0.72f), new Vector2(0.98f, 0.93f), Color.white);
+            card.title.fontStyle = FontStyles.Bold;
+            card.pips = new Image[3];
+            for (int p = 0; p < 3; p++)
+                card.pips[p] = Panel(t, "Pip", new Vector2(0.36f + p * 0.13f, 0.64f), new Vector2(0.46f + p * 0.13f, 0.69f), cyan);
+            card.detail = Text(t, "", 22, TextAlignmentOptions.TopLeft, new Vector2(0.07f, 0.33f), new Vector2(0.95f, 0.6f), muted);
+            Card captured = card;
+            card.buy = Btn(t, "$0", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.3f), () => Buy(captured), gold, Color.black);
+            card.price = card.buy.GetComponentInChildren<TextMeshProUGUI>();
+            card.price.fontSize = 26;
+            card.flash = Panel(t, "Flash", Vector2.zero, Vector2.one, Color.clear);
+            return card;
+        }
+
+        void BuildMatch(Transform g)
+        {
+            matchTab = Rect(g, "Match", Vector2.zero, Vector2.one).gameObject;
+            var m = matchTab.transform;
+
+            var list = Panel(m, "Opponents", new Vector2(0.1f, 0.36f), new Vector2(0.67f, 0.9f), panel);
+            AddOutline(list, line, 2f);
+            Text(list.transform, "OPPONENTS", 24, TextAlignmentOptions.Left, new Vector2(0.04f, 0.86f), new Vector2(0.6f, 0.97f), cyan).fontStyle = FontStyles.Bold;
+            Text(list.transform, "BOUNTY", 20, TextAlignmentOptions.Left, new Vector2(0.72f, 0.86f), new Vector2(0.96f, 0.97f), muted).fontStyle = FontStyles.Bold;
+            matchList = Text(list.transform, "", 28, TextAlignmentOptions.TopLeft, new Vector2(0.04f, 0.04f), new Vector2(0.96f, 0.85f), Color.white);
+            matchList.lineSpacing = 18f;
+
+            var mark = Panel(m, "Mark", new Vector2(0.1f, 0.03f), new Vector2(0.67f, 0.33f), panel);
+            AddOutline(mark, gold, 2f);
+            Icon(mark.transform, iconLaurel, new Vector2(0.02f, 0.15f), new Vector2(0.2f, 0.85f), gold);
+            Text(mark.transform, "THE EMPEROR MARKS", 20, TextAlignmentOptions.Left, new Vector2(0.23f, 0.74f), new Vector2(0.98f, 0.95f), gold).fontStyle = FontStyles.Bold;
+            markText = Text(mark.transform, "", 24, TextAlignmentOptions.TopLeft, new Vector2(0.23f, 0.06f), new Vector2(0.98f, 0.74f), Color.white);
+
+            var rewards = Panel(m, "Rewards", new Vector2(0.69f, 0.48f), new Vector2(0.98f, 0.9f), panel);
+            AddOutline(rewards, line, 2f);
+            Text(rewards.transform, "REWARDS", 24, TextAlignmentOptions.Left, new Vector2(0.06f, 0.82f), new Vector2(0.94f, 0.96f), cyan).fontStyle = FontStyles.Bold;
+            rewardText = Text(rewards.transform, "", 24, TextAlignmentOptions.TopLeft, new Vector2(0.06f, 0.3f), new Vector2(0.94f, 0.8f), Color.white);
+            runText = Text(rewards.transform, "", 22, TextAlignmentOptions.BottomLeft, new Vector2(0.06f, 0.05f), new Vector2(0.94f, 0.28f), muted);
+
+            var hint = Panel(m, "Hint", new Vector2(0.69f, 0.03f), new Vector2(0.98f, 0.33f), panel);
+            AddOutline(hint, line, 2f);
+            Text(hint.transform, "Wrecks earn bounty: a higher number means a tougher car and a bigger reward. " +
+                                 "Big hits can make the emperor toss a gift into the arena.",
+                20, TextAlignmentOptions.TopLeft, new Vector2(0.06f, 0.08f), new Vector2(0.94f, 0.92f), muted);
         }
 
         void Step(int d)
@@ -279,6 +519,8 @@ namespace CarArena
         }
 
         // ------------------------------------------------------------------ UI helpers
+
+        static string Hex(Color c) => ColorUtility.ToHtmlStringRGB(c);
 
         static RectTransform Rect(Transform parent, string name, Vector2 min, Vector2 max)
         {
@@ -310,6 +552,36 @@ namespace CarArena
             return img;
         }
 
+        static void AddOutline(Graphic g, Color c, float width)
+        {
+            var o = g.gameObject.AddComponent<Outline>();
+            o.effectColor = c;
+            o.effectDistance = new Vector2(width, -width);
+        }
+
+        static Image Icon(Transform parent, Sprite sprite, Vector2 min, Vector2 max, Color c)
+        {
+            var img = Panel(parent, "Icon", min, max, c);
+            img.sprite = sprite;
+            img.preserveAspect = true;
+            if (sprite == null) img.color = Color.clear;
+            return img;
+        }
+
+        void Brackets(Transform parent)
+        {
+            const float len = 0.06f, th = 0.012f;
+            Vector2[] corners = { new Vector2(0f, 0f), new Vector2(1f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f) };
+            foreach (var k in corners)
+            {
+                float sx = k.x < 0.5f ? 1f : -1f, sy = k.y < 0.5f ? 1f : -1f;
+                Panel(parent, "BracketH", new Vector2(Mathf.Min(k.x, k.x + sx * len), Mathf.Min(k.y, k.y + sy * th * 1.6f)),
+                    new Vector2(Mathf.Max(k.x, k.x + sx * len), Mathf.Max(k.y, k.y + sy * th * 1.6f)), cyan);
+                Panel(parent, "BracketV", new Vector2(Mathf.Min(k.x, k.x + sx * th), Mathf.Min(k.y, k.y + sy * len * 1.6f)),
+                    new Vector2(Mathf.Max(k.x, k.x + sx * th), Mathf.Max(k.y, k.y + sy * len * 1.6f)), cyan);
+            }
+        }
+
         static TextMeshProUGUI Text(Transform parent, string text, float size, TextAlignmentOptions align, Vector2 min, Vector2 max, Color c)
         {
             var rt = Rect(parent, "Text", min, max);
@@ -324,20 +596,26 @@ namespace CarArena
             return t;
         }
 
-        static Button Btn(Transform parent, string label, Vector2 min, Vector2 max, Action onClick, Color bg, Color fg)
+        Button Btn(Transform parent, string label, Vector2 min, Vector2 max, Action onClick, Color bg, Color fg, bool outlined = false)
         {
             var img = Panel(parent, "Button", min, max, bg);
             img.raycastTarget = true;
+            if (outlined) AddOutline(img, line, 2f);
             var b = img.gameObject.AddComponent<Button>();
             var colors = b.colors;
             colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1.15f, 1.15f, 1.15f);
-            colors.pressedColor = new Color(0.75f, 0.75f, 0.75f);
-            colors.disabledColor = new Color(0.45f, 0.45f, 0.45f, 0.6f);
+            colors.highlightedColor = new Color(1.25f, 1.25f, 1.25f);
+            colors.pressedColor = new Color(0.7f, 0.7f, 0.7f);
+            colors.selectedColor = Color.white;
+            colors.disabledColor = new Color(0.4f, 0.4f, 0.4f, 0.55f);
+            colors.fadeDuration = 0.08f;
             b.colors = colors;
             b.onClick.AddListener(() => onClick());
-            var t = Text(img.transform, label, 30, TextAlignmentOptions.Center, Vector2.zero, Vector2.one, fg);
-            t.fontStyle = FontStyles.Bold;
+            if (!string.IsNullOrEmpty(label))
+            {
+                var t = Text(img.transform, label, 30, TextAlignmentOptions.Center, Vector2.zero, Vector2.one, fg);
+                t.fontStyle = FontStyles.Bold;
+            }
             return b;
         }
     }
