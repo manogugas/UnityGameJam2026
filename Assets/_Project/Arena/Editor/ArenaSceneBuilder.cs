@@ -40,6 +40,7 @@ namespace CarArena.EditorTools
 
         static Material mSand, mAsphalt, mBank, mConcrete, mRamp, mObstacle, mTyre, mCrate, mWreck;
         static Material mStone, mStone2, mGate, mClothRed, mClothPurple, mSkin;
+        static Material mRoundel, mNumberGold, mArmour;
         static Material[] mCrowd;
         static Material mHealthFill, mWarnLamp;
         const string AudioDir = Root + "/Audio";
@@ -94,8 +95,12 @@ namespace CarArena.EditorTools
                 BuildEnemyPrefab(asphalt, DriverArchetype.Flanker, "Flanker", new Color(0.85f, 0.65f, 0.12f), 1100f, 50f, 120f, 2500f),
                 BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Bruiser", new Color(0.2f, 0.24f, 0.18f), 1900f, 110f, 165f, 3600f),
             };
+            var champion = BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Champion", new Color(0.85f, 0.66f, 0.18f), 2300f, 220f, 200f, 4200f, "EnemyChampion");
             var director = BuildDirector(car, enemyPrefabs);
             BuildIntro(car, playerGate, director);
+            BuildCampaign(car, playerGate, director, new[] { enemyPrefabs[0], enemyPrefabs[1], enemyPrefabs[2], champion });
+            BuildChaseCamera(car);
+            BuildObjectives(director);
 
             EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
             AssetDatabase.SaveAssets();
@@ -129,6 +134,11 @@ namespace CarArena.EditorTools
             mClothRed = Mat("ClothRed", new Color(0.62f, 0.08f, 0.06f), 0.1f);
             mClothPurple = Mat("ClothPurple", new Color(0.36f, 0.1f, 0.42f), 0.1f);
             mSkin = Mat("CrowdSkin", new Color(0.86f, 0.66f, 0.52f), 0.2f);
+            mRoundel = Mat("NumberRoundel", new Color(0.95f, 0.94f, 0.9f), 0.3f);
+            mNumberGold = Mat("NumberFavourGold", new Color(1f, 0.75f, 0.15f), 0.7f, 0.8f);
+            mNumberGold.EnableKeyword("_EMISSION");
+            mNumberGold.SetColor("_EmissionColor", new Color(0.8f, 0.5f, 0.05f));
+            mArmour = Mat("ArmourSteel", new Color(0.28f, 0.29f, 0.3f), 0.35f, 0.7f);
             mHealthFill = Mat("HealthFill", new Color(0.25f, 1f, 0.3f), 0.5f);
             mHealthFill.EnableKeyword("_EMISSION");
             mHealthFill.SetColor("_EmissionColor", new Color(0.25f, 1f, 0.3f));
@@ -703,7 +713,7 @@ namespace CarArena.EditorTools
             orbit.VerticalAxis.Value = 26f;
             orbit.HorizontalAxis.Value = 200f;
             overview.gameObject.AddComponent<CinemachineRotationComposer>();
-            overview.Priority.Value = 100; // live from the first frame
+            // Priority stays 0: IntroCinematic raises it when the intro plays (the campaign starts in the garage).
 
             // 2. Tele shot of the gate, tracking the car as it rolls out.
             Transform g = playerGate.transform;
@@ -1008,6 +1018,8 @@ namespace CarArena.EditorTools
             interiorDamage.gloveboxHinge = glove.transform;
             interiorDamage.sunVisorHinge = visor.transform;
 
+            BuildNumberPlates(root, bodyRoot);
+
             var health = root.AddComponent<CarHealth>();
             health.car = controller;
             health.damage = damage;
@@ -1043,6 +1055,8 @@ namespace CarArena.EditorTools
                 hud.health = health;
 
                 root.AddComponent<CombatHud>().player = health;
+                BuildUpgradeVisuals(root, bodyRoot, hoodHinge.transform, controller, health);
+                BuildTablet(t);
 
                 // Health gauge in the middle of the dashboard, right of the steering wheel.
                 var hg = Empty("HealthGauge", dash.transform, new Vector3(0.03f, 0.045f, -0.2285f));
@@ -1194,11 +1208,483 @@ namespace CarArena.EditorTools
             return ps;
         }
 
-        static GameObject BuildEnemyPrefab(SurfaceProfile defaultSurface, DriverArchetype archetype, string name,
-            Color paint, float mass, float health, float powerKW, float torque)
+        // ---------------------------------------------------------------- campaign pieces
+
+        /// <summary>Racing number: white roundel + black digits on the roof and both doors; gold rims and a
+        /// floating gold diamond over the roof when the emperor marks the car.</summary>
+        static void BuildNumberPlates(GameObject root, Transform bodyRoot)
         {
-            var body = Mat("Enemy" + archetype + "Body", paint, 0.35f, 0.25f);
-            var panel = Mat("Enemy" + archetype + "Panel", paint * 0.88f, 0.35f, 0.25f);
+            var group = Empty("NumberPlates", bodyRoot, Vector3.zero).transform;
+            var texts = new System.Collections.Generic.List<TextMeshPro>();
+            var rims = new System.Collections.Generic.List<GameObject>();
+
+            // Roof
+            Prim(PrimitiveType.Cylinder, "RoofRoundel", group, new Vector3(0f, 1.083f, -0.72f), new Vector3(0.56f, 0.003f, 0.56f), mRoundel);
+            rims.Add(Prim(PrimitiveType.Cylinder, "RoofRim", group, new Vector3(0f, 1.0815f, -0.72f), new Vector3(0.66f, 0.003f, 0.66f), mNumberGold));
+            texts.Add(PlateText(group, new Vector3(0f, 1.0875f, -0.72f), Quaternion.Euler(90f, 0f, 0f), 4.6f));
+
+            // Doors (left faces -X, right faces +X)
+            for (int s = -1; s <= 1; s += 2)
+            {
+                Prim(PrimitiveType.Cylinder, "DoorRoundel", group, new Vector3(0.903f * s, 0.42f, -0.25f), new Vector3(0.42f, 0.003f, 0.42f), mRoundel,
+                    false, Quaternion.Euler(0f, 0f, 90f));
+                rims.Add(Prim(PrimitiveType.Cylinder, "DoorRim", group, new Vector3(0.9015f * s, 0.42f, -0.25f), new Vector3(0.5f, 0.003f, 0.5f), mNumberGold,
+                    false, Quaternion.Euler(0f, 0f, 90f)));
+                texts.Add(PlateText(group, new Vector3(0.9075f * s, 0.42f, -0.25f), Quaternion.Euler(0f, s < 0 ? 90f : -90f, 0f), 3.4f));
+            }
+            foreach (var r in rims) r.SetActive(false);
+            var beacon = Prim(PrimitiveType.Cube, "MarkBeacon", group, new Vector3(0f, 1.9f, -0.72f), new Vector3(0.38f, 0.38f, 0.38f), mNumberGold,
+                false, Quaternion.Euler(45f, 0f, 45f));
+            beacon.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            beacon.SetActive(false);
+
+            var plates = root.AddComponent<CarNumberPlates>();
+            plates.texts = texts.ToArray();
+            plates.favourRims = rims.ToArray();
+            plates.markBeacon = beacon;
+        }
+
+        static TextMeshPro PlateText(Transform parent, Vector3 pos, Quaternion rot, float size)
+        {
+            var go = new GameObject("Number");
+            go.transform.SetParent(parent, false);
+            var tmp = go.AddComponent<TextMeshPro>();
+            tmp.text = "";
+            tmp.fontSize = size;
+            tmp.fontStyle = FontStyles.Bold;
+            tmp.alignment = TextAlignmentOptions.Center;
+            tmp.textWrappingMode = TextWrappingModes.NoWrap;
+            tmp.color = new Color(0.06f, 0.06f, 0.06f);
+            tmp.rectTransform.sizeDelta = new Vector2(0.5f, 0.35f);
+            tmp.rectTransform.localPosition = pos;
+            tmp.rectTransform.localRotation = rot;
+            go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            return tmp;
+        }
+
+        /// <summary>Bolt-on parts that appear with upgrade levels (player car).</summary>
+        static void BuildUpgradeVisuals(GameObject root, Transform bodyRoot, Transform hoodHinge, CarController controller, CarHealth health)
+        {
+            var group = Empty("Upgrades", bodyRoot, Vector3.zero).transform;
+
+            // Armour: L1 door plates, L2 hood plate + grille guard, L3 roof cage
+            var a1 = Empty("Armour1", group, Vector3.zero).transform;
+            for (int s = -1; s <= 1; s += 2)
+                Prim(PrimitiveType.Cube, "DoorPlate", a1, new Vector3(0.915f * s, 0.07f, -0.2f), new Vector3(0.03f, 0.24f, 1.5f), mArmour);
+            var a2 = Empty("Armour2", hoodHinge, Vector3.zero).transform;
+            Prim(PrimitiveType.Cube, "HoodPlate", a2, new Vector3(0f, 0.075f, 0.95f), new Vector3(1.3f, 0.025f, 0.9f), mArmour);
+            for (int b = -2; b <= 2; b++)
+                Prim(PrimitiveType.Cube, "Rivet", a2, new Vector3(b * 0.28f, 0.09f, 0.55f), new Vector3(0.04f, 0.02f, 0.04f), mTrim);
+            var a3 = Empty("Armour3", group, Vector3.zero).transform;
+            for (int s = -1; s <= 1; s++)
+                Prim(PrimitiveType.Cube, "CageBar", a3, new Vector3(0.65f * s, 1.13f, -0.72f), new Vector3(0.05f, 0.05f, 1.7f), mArmour);
+            for (int b = 0; b < 3; b++)
+                Prim(PrimitiveType.Cube, "CageCross", a3, new Vector3(0f, 1.15f, -1.4f + b * 0.68f), new Vector3(1.4f, 0.05f, 0.05f), mArmour);
+
+            // Ram plate: L1 bull bar, L2 double bar, L3 plough with spikes
+            var r1 = Empty("Ram1", group, Vector3.zero).transform;
+            Prim(PrimitiveType.Cube, "Bar", r1, new Vector3(0f, 0.05f, 2.43f), new Vector3(1.6f, 0.08f, 0.08f), mArmour);
+            for (int s = -1; s <= 1; s += 2)
+                Prim(PrimitiveType.Cube, "Post", r1, new Vector3(0.55f * s, -0.04f, 2.39f), new Vector3(0.08f, 0.26f, 0.08f), mArmour);
+            var r2 = Empty("Ram2", group, Vector3.zero).transform;
+            Prim(PrimitiveType.Cube, "TopBar", r2, new Vector3(0f, 0.24f, 2.4f), new Vector3(1.5f, 0.07f, 0.07f), mArmour);
+            for (int s = -1; s <= 1; s += 2)
+                Prim(PrimitiveType.Cube, "Upright", r2, new Vector3(0.25f * s, 0.14f, 2.42f), new Vector3(0.06f, 0.26f, 0.06f), mArmour);
+            var r3 = Empty("Ram3", group, Vector3.zero).transform;
+            Prim(PrimitiveType.Cube, "Plough", r3, new Vector3(0f, 0.02f, 2.52f), new Vector3(1.95f, 0.38f, 0.05f), mArmour, false, Quaternion.Euler(-25f, 0f, 0f));
+            for (int b = -1; b <= 1; b++)
+                Prim(PrimitiveType.Cube, "Spike", r3, new Vector3(b * 0.6f, 0.08f, 2.62f), new Vector3(0.06f, 0.06f, 0.22f), mTrim);
+
+            // Engine: L2 hood scoop, L3 side pipes (L1 is all under the hood)
+            var e2 = Empty("Engine2", hoodHinge, Vector3.zero).transform;
+            Prim(PrimitiveType.Cube, "Scoop", e2, new Vector3(0f, 0.11f, 0.55f), new Vector3(0.42f, 0.11f, 0.38f), mTrim);
+            Prim(PrimitiveType.Cube, "ScoopMouth", e2, new Vector3(0f, 0.12f, 0.74f), new Vector3(0.36f, 0.06f, 0.02f), mGate);
+            var e3 = Empty("Engine3", group, Vector3.zero).transform;
+            for (int s = -1; s <= 1; s += 2)
+                Prim(PrimitiveType.Cylinder, "SidePipe", e3, new Vector3(0.95f * s, -0.16f, 0.2f), new Vector3(0.09f, 0.55f, 0.09f), mMirror, false, Quaternion.Euler(90f, 0f, 0f));
+
+            var up = root.AddComponent<CarUpgrades>();
+            up.car = controller;
+            up.health = health;
+            up.armourLevels = new[] { a1.gameObject, a2.gameObject, a3.gameObject };
+            up.ramPlateLevels = new[] { r1.gameObject, r2.gameObject, r3.gameObject };
+            up.engineLevels = new GameObject[] { null, e2.gameObject, e3.gameObject };
+            foreach (var g in new[] { a1, a2, a3, r1, r2, r3, e2, e3 }) g.gameObject.SetActive(false);
+        }
+
+        /// <summary>The tablet the driver holds up in front of the windscreen (screen built at runtime by TabletUI).</summary>
+        static void BuildTablet(Transform car)
+        {
+            const int uiLayer = 5; // built-in "UI" layer: the garage camera doesn't render it
+            var tablet = Empty("Tablet", car, new Vector3(-0.35f, 0.74f, -0.13f), Quaternion.Euler(10f, 0f, 0f));
+            Prim(PrimitiveType.Cube, "Body", tablet.transform, Vector3.zero, new Vector3(0.46f, 0.3f, 0.018f), mTrim);
+            Prim(PrimitiveType.Cube, "Grip", tablet.transform, new Vector3(0f, -0.16f, 0.01f), new Vector3(0.2f, 0.03f, 0.03f), mInterior);
+            var screen = new GameObject("Screen", typeof(RectTransform));
+            screen.transform.SetParent(tablet.transform, false);
+            var rt = screen.GetComponent<RectTransform>();
+            rt.sizeDelta = new Vector2(1000f, 640f);
+            rt.localPosition = new Vector3(0f, 0f, -0.0105f);
+            rt.localScale = Vector3.one * 0.00042f;
+            var canvas = screen.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.WorldSpace;
+            screen.AddComponent<UnityEngine.UI.GraphicRaycaster>();
+            foreach (var tr in tablet.GetComponentsInChildren<Transform>(true)) tr.gameObject.layer = uiLayer;
+        }
+
+        static void BuildCampaign(GameObject playerCar, ArenaGate playerGate, ArenaDirector director, GameObject[] enemyPrefabs)
+        {
+            var settings = CampaignAsset(enemyPrefabs);
+
+            if (Object.FindAnyObjectByType<UnityEngine.EventSystems.EventSystem>() == null)
+            {
+                var es = new GameObject("EventSystem");
+                es.AddComponent<UnityEngine.EventSystems.EventSystem>();
+                es.AddComponent<UnityEngine.InputSystem.UI.InputSystemUIInputModule>();
+            }
+
+            // Garage view camera + a light that shines on the car while the tablet is up.
+            var camGo = new GameObject("GarageCamera");
+            var cam = camGo.AddComponent<Camera>();
+            cam.fieldOfView = 40f;
+            cam.nearClipPlane = 0.1f;
+            cam.farClipPlane = 80f;
+            cam.cullingMask = ~(1 << 5);
+            var garage = camGo.AddComponent<GarageCamera>();
+            garage.target = playerCar.transform;
+            var lightGo = new GameObject("GarageLight");
+            lightGo.transform.SetPositionAndRotation(playerGate.spawnPoint.position + Vector3.up * 4.2f, Quaternion.Euler(90f, 0f, 0f));
+            var light = lightGo.AddComponent<Light>();
+            light.type = LightType.Spot;
+            light.range = 12f;
+            light.spotAngle = 80f;
+            light.intensity = 9f;
+            light.color = new Color(1f, 0.9f, 0.75f);
+            light.enabled = false;
+            garage.showroomLight = light;
+
+            var go = new GameObject("Campaign");
+            var overlay = go.AddComponent<MatchSummaryUI>();
+            var tabletUI = go.AddComponent<TabletUI>();
+            var campaign = go.AddComponent<CampaignDirector>();
+            var tablet = playerCar.transform.Find("Tablet");
+            tabletUI.campaign = campaign;
+            tabletUI.tablet = tablet;
+            tabletUI.canvas = tablet.GetComponentInChildren<Canvas>(true);
+            tabletUI.shownPosition = tablet.localPosition;
+            tabletUI.shownEuler = tablet.localEulerAngles;
+            tabletUI.hiddenPosition = new Vector3(-0.3f, 0.36f, 0.12f);
+            tabletUI.hiddenEuler = new Vector3(80f, 0f, 0f);
+            tabletUI.garageCamera = garage;
+
+            campaign.settings = settings;
+            campaign.player = playerCar.GetComponent<CarController>();
+            campaign.arena = director;
+            campaign.intro = Object.FindAnyObjectByType<IntroCinematic>();
+            campaign.tablet = tabletUI;
+            campaign.garageCamera = garage;
+            campaign.overlay = overlay;
+            campaign.playerGate = playerGate;
+            campaign.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            if (campaign.intro != null) campaign.intro.autoPlay = false;
+            director.waitForIntro = true;
+        }
+
+        /// <summary>Experimental third-person camera (switched on from the F3 debug menu or F4).</summary>
+        static void BuildChaseCamera(GameObject playerCar)
+        {
+            var cam = VCam("CM Third Person", null, 66f, null, 0f, 0f);
+            var listener = cam.gameObject.AddComponent<CinemachineImpulseListener>();
+            listener.Gain = 0.35f;
+            listener.Use2DDistance = true;
+            var chase = cam.gameObject.AddComponent<ChaseCamera>();
+            chase.car = playerCar.GetComponent<CarController>();
+            chase.input = playerCar.GetComponent<CarInput>();
+            chase.vcam = cam;
+            chase.intro = Object.FindAnyObjectByType<IntroCinematic>();
+            chase.campaign = Object.FindAnyObjectByType<CampaignDirector>();
+            chase.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            chase.carAudio = playerCar.GetComponent<CarAudio>();
+            var hud = playerCar.GetComponent<CarHud>();
+            hud.chaseCamera = chase;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(hud);
+        }
+
+        // ---------------------------------------------------------------- side objectives
+
+        static Material GlowMat(string name, Color baseColor, Color emission, bool transparent)
+        {
+            var m = Mat(name, baseColor, 0.3f);
+            m.EnableKeyword("_EMISSION");
+            m.SetColor("_EmissionColor", emission);
+            m.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+            if (transparent)
+            {
+                m.SetFloat("_Surface", 1f);
+                m.SetFloat("_Blend", 0f);
+                m.SetFloat("_Cull", 0f);
+                m.SetFloat("_SrcBlend", (float)BlendMode.SrcAlpha);
+                m.SetFloat("_DstBlend", (float)BlendMode.OneMinusSrcAlpha);
+                m.SetFloat("_SrcBlendAlpha", (float)BlendMode.One);
+                m.SetFloat("_DstBlendAlpha", (float)BlendMode.OneMinusSrcAlpha);
+                m.SetFloat("_ZWrite", 0f);
+                m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                m.SetOverrideTag("RenderType", "Transparent");
+                m.renderQueue = (int)RenderQueue.Transparent;
+                m.SetShaderPassEnabled("ShadowCaster", false);
+            }
+            EditorUtility.SetDirty(m);
+            return m;
+        }
+
+        static void BuildObjectives(ArenaDirector director)
+        {
+            var go = new GameObject("ArenaObjectives");
+            var objectives = go.AddComponent<ArenaObjectives>();
+            objectives.director = director;
+            objectives.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            objectives.giftPrefab = GiftPrefab();
+            objectives.hazardPrefab = HazardPrefab();
+            director.objectives = objectives;
+            var campaign = Object.FindAnyObjectByType<CampaignDirector>();
+            if (campaign != null) campaign.objectives = objectives;
+
+            // Boost pads on open lanes: each one fires you across the arena (two of them through a kicker ramp).
+            var padOn = GlowMat("BoostChevronOn", new Color(1f, 0.55f, 0.1f), new Color(2.2f, 1.0f, 0.15f), false);
+            var padOff = GlowMat("BoostChevronOff", new Color(0.35f, 0.2f, 0.08f), new Color(0.12f, 0.05f, 0f), false);
+            var padBase = Mat("BoostPadBase", new Color(0.12f, 0.12f, 0.13f), 0.3f);
+            var pads = new System.Collections.Generic.List<BoostPad>
+            {
+                BoostPadAt(go.transform, new Vector3(-46f, 0f, 40f), 90f, padBase, padOn, padOff),   // east along z=40, over the back kicker
+                BoostPadAt(go.transform, new Vector3(50f, 0f, -42f), 0f, padBase, padOn, padOff),    // north up the east lane
+                BoostPadAt(go.transform, new Vector3(-48f, 0f, -30f), 90f, padBase, padOn, padOff),  // east along z=-30, over the front kicker
+                BoostPadAt(go.transform, new Vector3(44f, 0f, 55f), -90f, padBase, padOn, padOff),   // west along the north lane
+            };
+            objectives.pads = pads.ToArray();
+        }
+
+        static BoostPad BoostPadAt(Transform parent, Vector3 pos, float yaw, Material baseMat, Material on, Material off)
+        {
+            var root = Empty("BoostPad", parent, pos, Quaternion.Euler(0f, yaw, 0f));
+            var box = root.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+            box.size = new Vector3(3.8f, 2f, 9f);
+            box.center = new Vector3(0f, 1f, 0f);
+            var plate = Prim(PrimitiveType.Cube, "Plate", root.transform, new Vector3(0f, 0.012f, 0f), new Vector3(3.8f, 0.02f, 9f), baseMat);
+            plate.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            var renderers = new System.Collections.Generic.List<Renderer>();
+            for (int i = 0; i < 5; i++)
+            {
+                float z = -3.4f + i * 1.7f;
+                foreach (float side in new[] { -1f, 1f })
+                {
+                    var arm = Prim(PrimitiveType.Cube, "Chevron" + i, root.transform, new Vector3(side * 0.72f, 0.03f, z),
+                        new Vector3(1.75f, 0.02f, 0.38f), off, false, Quaternion.Euler(0f, side * 32f, 0f));
+                    var r = arm.GetComponent<MeshRenderer>();
+                    r.shadowCastingMode = ShadowCastingMode.Off;
+                    renderers.Add(r);
+                }
+            }
+            var pad = root.AddComponent<BoostPad>();
+            pad.chevrons = renderers.ToArray();
+            pad.renderersPerChevron = 2;
+            pad.onMaterial = on;
+            pad.offMaterial = off;
+            return pad;
+        }
+
+        static EmperorGift GiftPrefab()
+        {
+            var gold = mNumberGold;
+            var beamMat = GlowMat("GiftBeam", new Color(1f, 0.8f, 0.3f, 0.22f), new Color(0.9f, 0.6f, 0.15f), true);
+            var root = new GameObject("EmperorGift");
+            var trigger = root.AddComponent<BoxCollider>();
+            trigger.isTrigger = true;
+            trigger.size = new Vector3(2.8f, 2.6f, 2.8f);
+            trigger.center = new Vector3(0f, 0.7f, 0f);
+            var rb = root.AddComponent<Rigidbody>();
+            rb.isKinematic = true;
+            rb.useGravity = false;
+
+            var visual = Empty("Visual", root.transform, Vector3.zero).transform;
+            Prim(PrimitiveType.Cube, "Chest", visual, new Vector3(0f, 0.1f, 0f), new Vector3(1.3f, 0.8f, 0.9f), mCrate);
+            Prim(PrimitiveType.Cube, "Lid", visual, new Vector3(0f, 0.6f, 0f), new Vector3(1.36f, 0.24f, 0.96f), mClothPurple);
+            foreach (float x in new[] { -0.45f, 0.45f })
+                Prim(PrimitiveType.Cube, "Band", visual, new Vector3(x, 0.3f, 0f), new Vector3(0.12f, 0.92f, 0.98f), gold);
+            Prim(PrimitiveType.Cube, "Lock", visual, new Vector3(0f, 0.38f, 0.47f), new Vector3(0.2f, 0.24f, 0.06f), gold);
+            Prim(PrimitiveType.Cylinder, "Coins", visual, new Vector3(0f, 0.76f, 0f), new Vector3(0.7f, 0.06f, 0.5f), gold);
+
+            var beam = Prim(PrimitiveType.Cylinder, "Beam", root.transform, new Vector3(0f, 14f, 0f), new Vector3(0.7f, 14f, 0.7f), beamMat);
+            beam.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            var lightGo = Empty("Glow", root.transform, new Vector3(0f, 1.6f, 0f));
+            var light = lightGo.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.range = 9f;
+            light.intensity = 4f;
+            light.color = new Color(1f, 0.78f, 0.35f);
+            light.shadows = LightShadows.None;
+
+            var gift = root.AddComponent<EmperorGift>();
+            gift.visual = visual;
+            var prefab = PrefabUtility.SaveAsPrefabAsset(root, Root + "/Prefabs/EmperorGift.prefab");
+            Object.DestroyImmediate(root);
+            return prefab.GetComponent<EmperorGift>();
+        }
+
+        static ParticleSystem FireParticles(string name, Transform parent, bool burst)
+        {
+            var go = Empty(name, parent, Vector3.zero, Quaternion.Euler(-90f, 0f, 0f));
+            var ps = go.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.playOnAwake = false;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
+            var emission = ps.emission;
+            var shape = ps.shape;
+            var color = ps.colorOverLifetime;
+            color.enabled = true;
+            var g = new Gradient();
+            if (burst)
+            {
+                main.loop = false;
+                main.duration = 0.5f;
+                main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.2f);
+                main.startSpeed = new ParticleSystem.MinMaxCurve(6f, 15f);
+                main.startSize = new ParticleSystem.MinMaxCurve(0.8f, 2.2f);
+                main.gravityModifier = 0.4f;
+                main.maxParticles = 120;
+                emission.rateOverTime = 0f;
+                emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 70) });
+                shape.shapeType = ParticleSystemShapeType.Hemisphere;
+                shape.radius = 0.8f;
+                g.SetKeys(new[] { new GradientColorKey(new Color(1f, 0.85f, 0.4f), 0f), new GradientColorKey(new Color(1f, 0.35f, 0.05f), 0.25f), new GradientColorKey(new Color(0.15f, 0.13f, 0.12f), 0.7f) },
+                    new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0.8f, 0.5f), new GradientAlphaKey(0f, 1f) });
+            }
+            else
+            {
+                main.loop = true;
+                main.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.4f);
+                main.startSpeed = new ParticleSystem.MinMaxCurve(1.5f, 3.5f);
+                main.startSize = new ParticleSystem.MinMaxCurve(0.8f, 1.7f);
+                main.gravityModifier = -0.15f;
+                main.maxParticles = 400;
+                emission.rateOverTime = 90f;
+                shape.shapeType = ParticleSystemShapeType.Circle;
+                shape.radius = 3.6f;
+                var size = ps.sizeOverLifetime;
+                size.enabled = true;
+                size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0.3f));
+                g.SetKeys(new[] { new GradientColorKey(new Color(1f, 0.8f, 0.3f), 0f), new GradientColorKey(new Color(1f, 0.3f, 0.05f), 0.4f), new GradientColorKey(new Color(0.2f, 0.18f, 0.16f), 1f) },
+                    new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.1f), new GradientAlphaKey(0f, 1f) });
+            }
+            color.color = g;
+            var renderer = go.GetComponent<ParticleSystemRenderer>();
+            renderer.sharedMaterial = GraphicsSettings.currentRenderPipeline != null
+                ? GraphicsSettings.currentRenderPipeline.defaultParticleMaterial : null;
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            return ps;
+        }
+
+        static CrowdHazard HazardPrefab()
+        {
+            var warnMat = GlowMat("HazardWarning", new Color(1f, 0.1f, 0.05f, 0.35f), new Color(1.2f, 0.08f, 0.02f), true);
+            var barrelMat = GlowMat("HazardBarrel", new Color(0.45f, 0.18f, 0.08f), new Color(0.9f, 0.3f, 0.02f), false);
+            var root = new GameObject("CrowdHazard");
+
+            var projectile = Prim(PrimitiveType.Cylinder, "Barrel", root.transform, Vector3.zero, new Vector3(0.6f, 0.45f, 0.6f), barrelMat);
+            var trail = FireParticles("BarrelFlames", projectile.transform, false);
+            var tm = trail.main;
+            tm.playOnAwake = true;
+            tm.startSize = new ParticleSystem.MinMaxCurve(0.3f, 0.7f);
+            var ts = trail.shape;
+            ts.radius = 0.3f;
+            var te = trail.emission;
+            te.rateOverTime = 60f;
+
+            var ring = Prim(PrimitiveType.Cylinder, "WarningRing", root.transform, new Vector3(0f, 0.04f, 0f), new Vector3(14f, 0.005f, 14f), warnMat);
+            ring.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+
+            var fire = FireParticles("Fire", root.transform, false);
+            var blast = FireParticles("Blast", root.transform, true);
+
+            var lightGo = Empty("Glow", root.transform, new Vector3(0f, 1.5f, 0f));
+            var light = lightGo.AddComponent<Light>();
+            light.type = LightType.Point;
+            light.range = 14f;
+            light.intensity = 0f;
+            light.color = new Color(1f, 0.5f, 0.15f);
+            light.shadows = LightShadows.None;
+
+            var audioSource = root.AddComponent<AudioSource>();
+            audioSource.playOnAwake = false;
+            audioSource.spatialBlend = 1f;
+            audioSource.minDistance = 10f;
+            audioSource.maxDistance = 180f;
+            audioSource.rolloffMode = AudioRolloffMode.Linear;
+            audioSource.pitch = 0.6f;
+            audioSource.volume = 1f;
+
+            var hazard = root.AddComponent<CrowdHazard>();
+            hazard.projectile = projectile.transform;
+            hazard.warningRing = ring.transform;
+            hazard.warningRenderer = ring.GetComponent<MeshRenderer>();
+            hazard.fire = fire;
+            hazard.blast = blast;
+            hazard.glow = light;
+            hazard.audioSource = audioSource;
+            hazard.blastClip = crashClips != null && crashClips.Length > 0 ? crashClips[0] : null;
+            var prefab = PrefabUtility.SaveAsPrefabAsset(root, Root + "/Prefabs/CrowdHazard.prefab");
+            Object.DestroyImmediate(root);
+            return prefab.GetComponent<CrowdHazard>();
+        }
+
+        static CampaignSettings CampaignAsset(GameObject[] enemyPrefabs)
+        {
+            string path = Root + "/Settings/CampaignSettings.asset";
+            Directory.CreateDirectory(Root + "/Settings");
+            var s = AssetDatabase.LoadAssetAtPath<CampaignSettings>(path);
+            if (s == null)
+            {
+                s = ScriptableObject.CreateInstance<CampaignSettings>();
+                MatchDefinition M(string n, float scale, params EnemyType[] e) => new MatchDefinition { name = n, statScale = scale, enemies = e };
+                s.matches = new[]
+                {
+                    M("First Blood", 1f, EnemyType.Rammer),
+                    M("Double Trouble", 1f, EnemyType.Rammer, EnemyType.Rammer),
+                    M("Wings", 1f, EnemyType.Rammer, EnemyType.Flanker),
+                    M("The Heavy", 1.05f, EnemyType.Bruiser, EnemyType.Rammer),
+                    M("Pack Hunt", 1.05f, EnemyType.Flanker, EnemyType.Flanker, EnemyType.Rammer),
+                    M("Iron Wall", 1.1f, EnemyType.Bruiser, EnemyType.Bruiser, EnemyType.Flanker),
+                    M("Gauntlet", 1.15f, EnemyType.Rammer, EnemyType.Rammer, EnemyType.Flanker, EnemyType.Bruiser),
+                    M("The Champion", 1.2f, EnemyType.Champion, EnemyType.Flanker, EnemyType.Flanker),
+                };
+                s.matches[7].championMatch = true;
+                s.upgrades = new[]
+                {
+                    new UpgradeTrack { type = UpgradeType.Armour, displayName = "Armour plating",
+                        levelText = new[] { "+25 hull", "+50 hull", "+80 hull" }, costs = new[] { 150, 300, 500 } },
+                    new UpgradeTrack { type = UpgradeType.Engine, displayName = "Engine",
+                        levelText = new[] { "+15% power", "+30% power", "+50% power" }, costs = new[] { 150, 300, 500 } },
+                    new UpgradeTrack { type = UpgradeType.Tyres, displayName = "Tyres",
+                        levelText = new[] { "+6% grip", "+12% grip", "+20% grip" }, costs = new[] { 120, 250, 400 } },
+                    new UpgradeTrack { type = UpgradeType.RamPlate, displayName = "Ram plate",
+                        levelText = new[] { "Ram: -20% taken, +15% dealt", "Ram: -38% taken, +30% dealt", "Ram: -55% taken, +50% dealt" },
+                        costs = new[] { 150, 300, 500 } },
+                };
+                AssetDatabase.CreateAsset(s, path);
+            }
+            s.enemyPrefabs = enemyPrefabs; // always point at the freshly built prefabs
+            if (s.championNumber < 10) s.championNumber = 10; // numbers are two digits now
+            EditorUtility.SetDirty(s);
+            return s;
+        }
+
+        static GameObject BuildEnemyPrefab(SurfaceProfile defaultSurface, DriverArchetype archetype, string name,
+            Color paint, float mass, float health, float powerKW, float torque, string fileName = null)
+        {
+            fileName = fileName ?? "Enemy" + archetype;
+            var body = Mat(fileName + "Body", paint, 0.35f, 0.25f);
+            var panel = Mat(fileName + "Panel", paint * 0.88f, 0.35f, 0.25f);
             var car = BuildCar(defaultSurface, name, false, body, panel);
             var controller = car.GetComponent<CarController>();
             controller.mass = mass;
@@ -1207,7 +1693,7 @@ namespace CarArena.EditorTools
             car.GetComponent<Rigidbody>().mass = mass;
             car.GetComponent<CarHealth>().maxHealth = health;
             car.GetComponent<AICarDriver>().archetype = archetype;
-            string path = Root + "/Prefabs/Enemy" + archetype + ".prefab";
+            string path = Root + "/Prefabs/" + fileName + ".prefab";
             var prefab = PrefabUtility.SaveAsPrefabAsset(car, path);
             Object.DestroyImmediate(car);
             return prefab;

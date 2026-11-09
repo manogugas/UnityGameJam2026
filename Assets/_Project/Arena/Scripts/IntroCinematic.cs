@@ -44,7 +44,12 @@ namespace CarArena
         [Range(0f, 0.2f)] public float letterbox = 0.11f;
         public float fadeInTime = 1.2f;
 
+        [Tooltip("Play the full intro on Start and then start the sandbox director (no campaign in the scene).")]
+        public bool autoPlay = true;
+
         public bool Playing { get; private set; }
+        System.Action onFinished;
+        bool fullIntro = true;
 
         const int Off = 0, On = 100;
 
@@ -67,7 +72,23 @@ namespace CarArena
             if (overviewCam != null) orbit = overviewCam.GetComponent<CinemachineOrbitalFollow>();
         }
 
-        void Start() => StartCoroutine(Run());
+        void Start()
+        {
+            if (autoPlay) Play(true, () => { if (director != null) director.BeginSpawning(); });
+        }
+
+        /// <summary>
+        /// Drive out of the player's gate into the arena. Full = with the arena overview and title (first
+        /// match of a session); otherwise straight to the gate shot. onFinished runs when control is handed over.
+        /// </summary>
+        public void Play(bool full, System.Action onFinished)
+        {
+            if (Playing) return;
+            fullIntro = full;
+            this.onFinished = onFinished;
+            skip = false;
+            StartCoroutine(Run());
+        }
 
         void Update()
         {
@@ -79,17 +100,17 @@ namespace CarArena
         IEnumerator Run()
         {
             Playing = true;
-            startTime = Time.time;
+            startTime = fullIntro ? Time.time : Time.time - fadeInTime;
             if (hud != null) hud.enabled = false;
             if (combatHud != null) combatHud.enabled = false;
             if (crowd != null) crowd.SetCabin(false);
             if (playerAudio != null) { playerAudio.SetExterior(true); playerAudio.masterGain = 0f; }
             Hold(true);
-            SetPriorities(overview: On);
+            if (fullIntro) SetPriorities(overview: On);
 
             // 1. Overview: orbit while the crowd warms up.
             if (crowd != null) crowd.Cheer(0.4f);
-            for (float t = 0f; t < overviewTime && !skip; t += Time.deltaTime)
+            for (float t = 0f; fullIntro && t < overviewTime && !skip; t += Time.deltaTime)
             {
                 if (orbit != null) orbit.HorizontalAxis.Value = orbitStartDeg + orbitSweepDeg * Smooth(t / overviewTime);
                 titleAlpha = Mathf.Clamp01((t - 0.8f) / 0.8f) * Mathf.Clamp01((overviewTime - 0.6f - t) / 0.8f);
@@ -155,9 +176,11 @@ namespace CarArena
             if (hud != null) hud.enabled = true;
             if (combatHud != null) combatHud.enabled = true;
             Hold(false);
-            if (director != null) director.BeginSpawning();
             titleAlpha = 0f;
             Playing = false;
+            var done = onFinished;
+            onFinished = null;
+            done?.Invoke();
         }
 
         /// <summary>Skip: drop the custom blends for a moment so the brain cuts instead of blending.</summary>

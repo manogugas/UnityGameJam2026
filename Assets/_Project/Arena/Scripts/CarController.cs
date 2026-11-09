@@ -99,6 +99,15 @@ namespace CarArena
         /// <summary>A driven wheel is spinning or sliding well past peak grip (TC on or off).</summary>
         public bool WheelSpin { get; private set; }
 
+        [Header("Boost (boost pads)")]
+        [Tooltip("Forward acceleration (m/s^2) while boosting, on top of the engine.")]
+        public float boostAccel = 12f;
+        public float BoostTime { get; private set; }
+        public bool Boosting => BoostTime > 0f;
+
+        /// <summary>Shove the car forward for a while (boost pads).</summary>
+        public void Boost(float seconds) => BoostTime = Mathf.Max(BoostTime, seconds);
+
         static readonly float[] GearTopSpeed = { 0f, 11f, 19f, 28f, 38f, 48f, 60f };
         const float IdleRpm = 900f, RedlineRpm = 6800f;
 
@@ -187,6 +196,14 @@ namespace CarArena
             AntiRoll(rearLeft, rearRight, antiRollRear);
 
             DriveWheels(dt);
+
+            if (BoostTime > 0f)
+            {
+                BoostTime -= dt;
+                bool grounded = false;
+                foreach (var w in wheels) grounded |= w.Grounded;
+                if (grounded && !EngineDead) rb.AddForce(transform.forward * boostAccel, ForceMode.Acceleration);
+            }
 
             Vector3 v = rb.linearVelocity;
             rb.AddForce(-v * v.magnitude * dragCoefficient);

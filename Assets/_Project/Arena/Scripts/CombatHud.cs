@@ -115,6 +115,7 @@ namespace CarArena
                 nameStyle = new GUIStyle(GUI.skin.label) { fontSize = 12, alignment = TextAnchor.LowerCenter };
             }
             DrawEnemyBars();
+            DrawGiftMarkers();
             DrawHitDirections();
             DrawPopups();
             DrawHitMarker();
@@ -136,6 +137,8 @@ namespace CarArena
                 float f = e.Health01;
                 Color fill = e.IsDead ? new Color(0.4f, 0.4f, 0.4f) : Color.Lerp(new Color(0.95f, 0.15f, 0.1f), new Color(0.35f, 0.9f, 0.3f), f);
                 var old = GUI.color;
+                GUI.color = e.marked && !e.IsDead ? new Color(1f, 0.75f, 0.15f, 0.95f) : new Color(0f, 0f, 0f, 0.65f);
+                GUI.DrawTexture(new Rect(x - 2, y - 2, w + 4, h + 4), Texture2D.whiteTexture);
                 GUI.color = new Color(0f, 0f, 0f, 0.65f);
                 GUI.DrawTexture(new Rect(x - 1, y - 1, w + 2, h + 2), Texture2D.whiteTexture);
                 GUI.color = fill;
@@ -150,7 +153,35 @@ namespace CarArena
                 GUI.color = old;
                 if (scale > 0.5f)
                     GUI.Label(new Rect(sp.x - 80, y - 18, 160, 16), e.IsDead ? e.displayName + " (wrecked)" : e.displayName, nameStyle);
+                if (e.marked && !e.IsDead)
+                {
+                    GUI.color = new Color(1f, 0.78f, 0.2f);
+                    GUI.Label(new Rect(sp.x - 80, y - (scale > 0.5f ? 34 : 18), 160, 16), "MARKED  x3", nameStyle);
+                    GUI.color = old;
+                }
             }
+        }
+
+        /// <summary>Gold "$" over each emperor's gift with its distance, so you can spot them across the arena.</summary>
+        void DrawGiftMarkers()
+        {
+            var objectives = director != null ? director.objectives : null;
+            if (objectives == null || player == null) return;
+            var old = GUI.color;
+            foreach (var g in objectives.Gifts)
+            {
+                if (g == null) continue;
+                Vector3 sp = cam.WorldToScreenPoint(g.transform.position + Vector3.up * 2.2f);
+                if (sp.z <= 0.5f) continue;
+                float d = Vector3.Distance(player.transform.position, g.transform.position);
+                float y = Screen.height - sp.y;
+                GUI.color = new Color(0f, 0f, 0f, 0.6f);
+                GUI.Label(new Rect(sp.x - 59, y - 21, 120, 30), "$", numberStyle);
+                GUI.color = new Color(1f, 0.8f, 0.2f);
+                GUI.Label(new Rect(sp.x - 60, y - 22, 120, 30), "$", numberStyle);
+                GUI.Label(new Rect(sp.x - 60, y + 2, 120, 16), $"{d:0} m", nameStyle);
+            }
+            GUI.color = old;
         }
 
         void DrawPopups()

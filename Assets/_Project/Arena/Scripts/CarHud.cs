@@ -7,7 +7,9 @@ namespace CarArena
     /// <summary>
     /// Player HUD. In normal play only gameplay feedback is drawn (hit flash, WRECKED banner, kill count):
     /// speed, gear and assists live on the dashboard. F3 toggles the debug overlay with the testing info:
-    /// speed/rpm/gear, drive type and assists, wheel surfaces, part damage, controls and the enemy roster.
+    /// speed/rpm/gear, drive type and assists, wheel surfaces, part damage, controls and the enemy roster,
+    /// plus the experimental third-person camera's switch and tuning sliders (the mouse is freed while it's open).
+    /// F4 toggles the third-person camera directly.
     /// </summary>
     public class CarHud : MonoBehaviour
     {
@@ -15,22 +17,53 @@ namespace CarArena
         public CarDamage damage;
         public CarHealth health;
         public ArenaDirector director;
+        public ChaseCamera chaseCamera;
+        [Tooltip("Shown under WRECKED. Empty = no hint (the campaign shows its own defeat screen).")]
+        public string wreckedHint = "<b>Backspace</b> to repair and get back in";
         [Tooltip("Debug overlay (toggle with F3).")]
         public bool debugVisible;
 
         GUIStyle big, small, banner, centred, kills;
         float hitFlash, lastHealth = -1f;
         readonly StringBuilder sb = new StringBuilder();
+        bool savedCursorVisible;
+        CursorLockMode savedCursorLock;
 
         void Start()
         {
             if (director == null) director = FindAnyObjectByType<ArenaDirector>();
+            if (chaseCamera == null) chaseCamera = FindAnyObjectByType<ChaseCamera>();
         }
 
         void Update()
         {
             var kb = Keyboard.current;
-            if (kb != null && kb.f3Key.wasPressedThisFrame) debugVisible = !debugVisible;
+            if (kb == null) return;
+            if (kb.f3Key.wasPressedThisFrame) SetDebugVisible(!debugVisible);
+            if (kb.f4Key.wasPressedThisFrame && chaseCamera != null) chaseCamera.enabledByUser = !chaseCamera.enabledByUser;
+        }
+
+        void OnDisable()
+        {
+            if (debugVisible) SetDebugVisible(false);
+        }
+
+        void SetDebugVisible(bool visible)
+        {
+            if (visible == debugVisible) return;
+            debugVisible = visible;
+            if (visible)
+            {
+                savedCursorVisible = Cursor.visible;
+                savedCursorLock = Cursor.lockState;
+                Cursor.visible = true;
+                Cursor.lockState = CursorLockMode.None;
+            }
+            else
+            {
+                Cursor.visible = savedCursorVisible;
+                Cursor.lockState = savedCursorLock;
+            }
         }
 
         void OnGUI()
@@ -72,10 +105,10 @@ namespace CarArena
                 GUI.Label(new Rect(w - 222, 18, 200, 30), $"KILLS {health.Kills}", kills);
             }
 
-            if (health.IsDead)
+            if (health.IsDead && !string.IsNullOrEmpty(wreckedHint))
             {
                 GUI.Label(new Rect(0, h * 0.3f, w, 80), "<color=#ff4030>WRECKED</color>", banner);
-                GUI.Label(new Rect(0, h * 0.3f + 70, w, 30), "<b>Backspace</b> to repair and get back in", centred);
+                GUI.Label(new Rect(0, h * 0.3f + 70, w, 30), wreckedHint, centred);
             }
         }
 
@@ -134,9 +167,39 @@ namespace CarArena
                 GUI.Label(new Rect(w - 320, 76, 315, 160), sb.ToString(), small);
             }
 
-            GUI.Label(new Rect(15, 10, 1000, 22),
+            DrawCameraPanel(h);
+
+            GUI.Label(new Rect(15, 10, 1600, 22),
                 "<b>DEBUG (F3)</b>   <b>WASD</b> drive (hold S to reverse)   <b>Space</b> handbrake   <b>Q/E</b> look   <b>Alt</b> look back   " +
-                "<b>T</b> FWD/RWD/AWD   <b>B</b> assists   <b>R</b> flip upright   <b>Backspace</b> repair", small);
+                "<b>T</b> FWD/RWD/AWD   <b>B</b> assists   <b>R</b> flip upright   <b>Backspace</b> repair   <b>F4</b> 3rd-person cam", small);
+        }
+
+        /// <summary>Third-person camera switch and sliders (left side, middle).</summary>
+        void DrawCameraPanel(float h)
+        {
+            if (chaseCamera == null) return;
+            var c = chaseCamera;
+            float x = 15f, y = h * 0.5f - 150f, w = 300f;
+            GUI.Box(new Rect(x - 5, y - 5, w + 10, 290), GUIContent.none);
+            c.enabledByUser = GUI.Toggle(new Rect(x, y, w, 22), c.enabledByUser,
+                c.Live ? " <b>3rd-person camera</b> (F4)  - live" : " <b>3rd-person camera</b> (F4)", small);
+            y += 28f;
+            c.distance = Slider(ref y, x, w, "Distance", c.distance, 3f, 15f, "0.0 m");
+            c.height = Slider(ref y, x, w, "Height", c.height, 0.5f, 6f, "0.0 m");
+            c.lookHeight = Slider(ref y, x, w, "Look height", c.lookHeight, 0f, 2.5f, "0.0 m");
+            c.fov = Slider(ref y, x, w, "Field of view", c.fov, 40f, 100f, "0");
+            c.rotationDamping = Slider(ref y, x, w, "Swing stiffness", c.rotationDamping, 0.5f, 15f, "0.0");
+            c.positionDamping = Slider(ref y, x, w, "Follow stiffness", c.positionDamping, 0.5f, 30f, "0.0");
+            c.speedPullback = Slider(ref y, x, w, "Speed pull-back", c.speedPullback, 0f, 0.1f, "0.000");
+        }
+
+        float Slider(ref float y, float x, float w, string label, float value, float min, float max, string format)
+        {
+            GUI.Label(new Rect(x, y, 120, 20), label, small);
+            GUI.Label(new Rect(x + w - 60, y, 60, 20), value.ToString(format), small);
+            value = GUI.HorizontalSlider(new Rect(x + 120, y + 5, w - 185, 16), value, min, max);
+            y += 32f;
+            return value;
         }
     }
 }

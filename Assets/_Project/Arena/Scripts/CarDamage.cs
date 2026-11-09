@@ -37,7 +37,16 @@ namespace CarArena
         [Tooltip("Damage per 1000 N s when a part's own collider is hit.")]
         public float directHitDamage = 9f;
 
+        [Tooltip("Backspace repairs instantly (sandbox / debug). The campaign turns this off: repairs cost money.")]
+        public bool allowManualRepair = true;
+
+        [Header("Bumps")]
+        [Tooltip("Any collision above this impulse (N s) raises Bumped, even if too light to damage (camera jolt).")]
+        public float bumpImpulse = 700f;
+
         public event Action<ImpactInfo> Impact;
+        /// <summary>(direction the car is pushed in world space, strength 0..1) for every noticeable collision.</summary>
+        public event Action<Vector3, float> Bumped;
         public event Action Repaired;
 
         public float TotalDamage { get; private set; }
@@ -47,7 +56,7 @@ namespace CarArena
         Rigidbody rb;
         readonly Dictionary<Collider, DetachablePart> partByCollider = new Dictionary<Collider, DetachablePart>();
         readonly HashSet<DetachablePart> directHits = new HashSet<DetachablePart>();
-        float lastImpactTime = -10f;
+        float lastImpactTime = -10f, lastBumpTime = -10f;
 
         void Awake()
         {
@@ -59,7 +68,7 @@ namespace CarArena
 
         void Update()
         {
-            if (input != null && input.RepairPressed) RepairAll();
+            if (allowManualRepair && input != null && input.RepairPressed) RepairAll();
         }
 
         void OnCollisionEnter(Collision c) => HandleCollision(c);
@@ -81,15 +90,21 @@ namespace CarArena
             }
             point /= count;
 
+            Vector3 dir = normal.sqrMagnitude > 1e-6f ? normal.normalized : (rb.worldCenterOfMass - point).normalized;
+            if (Vector3.Dot(dir, rb.worldCenterOfMass - point) < 0f) dir = -dir;
+            if (impulse > bumpImpulse && Time.time - lastBumpTime > 0.06f)
+            {
+                lastBumpTime = Time.time;
+                Bumped?.Invoke(dir, Mathf.Clamp01((impulse - bumpImpulse) / (fullImpulse - bumpImpulse)));
+            }
+
             if (impulse > minImpulse * 0.3f)
                 foreach (var part in directHits) part.ApplyDamage(impulse / 1000f * directHitDamage);
 
             if (impulse < minImpulse || Time.time - lastImpactTime < cooldown) return;
             lastImpactTime = Time.time;
 
-            // Dent direction: along the contact normal, pointing into the car.
-            Vector3 dir = normal.sqrMagnitude > 1e-6f ? normal.normalized : (rb.worldCenterOfMass - point).normalized;
-            if (Vector3.Dot(dir, rb.worldCenterOfMass - point) < 0f) dir = -dir;
+            // Dent direction: along the contact normal, pointing into the car (dir, above).
 
             var info = new ImpactInfo
             {
@@ -131,6 +146,9 @@ namespace CarArena
             TotalDamage += s;
             Impact?.Invoke(info);
         }
+
+        /// <summary>A shove that didn't come from a collision (explosions): jolts the driver's head.</summary>
+        public void ExternalBump(Vector3 worldPush, float strength) => Bumped?.Invoke(worldPush.normalized, Mathf.Clamp01(strength));
 
         public void RepairAll()
         {

@@ -39,6 +39,10 @@ namespace CarArena
         public float rammingMargin = 1.5f;
         [Tooltip("Scales all damage this car takes (the player gets a small buffer).")]
         public float incomingDamageScale = 1f;
+        [Tooltip("Extra damage this car deals when it rams another (ram plate upgrade).")]
+        public float ramDamageDealt = 1f;
+        [Tooltip("The emperor has marked this car's number this match: everyone hunts it, and wrecking it pays extra.")]
+        public bool marked;
         [Tooltip("Seconds a hit from another car still counts as the kill.")]
         public float killCreditTime = 5f;
 
@@ -101,14 +105,15 @@ namespace CarArena
                 lastAttacker = attacker;
                 lastAttackTime = Time.time;
             }
-            ApplyDamage(info.severity * damagePerSeverity * zone * RammingFactor(info) * incomingDamageScale, info.worldPoint, attacker);
+            ApplyDamage(info.severity * damagePerSeverity * zone * RammingFactor(info, attacker) * incomingDamageScale,
+                info.worldPoint, attacker);
         }
 
         /// <summary>
         /// Car-on-car hits: whoever was driving into the contact point faster is the rammer and takes much
         /// less damage; the one being rammed takes more. Scenery hits are unaffected.
         /// </summary>
-        float RammingFactor(ImpactInfo info)
+        float RammingFactor(ImpactInfo info, CarHealth attacker)
         {
             if (info.otherBody == null || car == null || car.Body == null) return 1f;
             Vector3 toPoint = info.worldPoint - car.Body.worldCenterOfMass;
@@ -118,7 +123,7 @@ namespace CarArena
             float mine = Vector3.Dot(car.Body.linearVelocity, toPoint);
             float theirs = Vector3.Dot(info.otherBody.linearVelocity, -toPoint);
             if (mine > theirs + rammingMargin) return rammerMultiplier;
-            if (theirs > mine + rammingMargin) return rammedMultiplier;
+            if (theirs > mine + rammingMargin) return rammedMultiplier * (attacker != null ? attacker.ramDamageDealt : 1f);
             return 1f;
         }
 
@@ -142,6 +147,22 @@ namespace CarArena
             CarHealth killer = lastAttacker != null && Time.time - lastAttackTime <= killCreditTime ? lastAttacker : null;
             if (killer != null && !killer.IsDead) killer.Kills++;
             Died?.Invoke(this, killer);
+        }
+
+        /// <summary>Change max health (armour upgrades) and set the current health.</summary>
+        public void SetMaxHealth(float max, float current)
+        {
+            maxHealth = Mathf.Max(1f, max);
+            SetHealth(current);
+        }
+
+        /// <summary>Set health directly (loading a run, repairs, resetting after a lost match).</summary>
+        public void SetHealth(float value)
+        {
+            Health = Mathf.Clamp(value, 0f, maxHealth);
+            IsDead = Health <= 0f;
+            if (car != null) car.EngineDead = IsDead;
+            UpdateSmoke();
         }
 
         public void Restore()

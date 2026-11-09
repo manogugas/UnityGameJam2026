@@ -1,0 +1,95 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29ada0012f6628948a66ebc817d41731, type: 3}
+  m_Name: CampaignSettings
+  m_EditorClassIdentifier: Assembly-CSharp::CarArena.CampaignSettings
+  enemyPrefabs:
+  - {fileID: 5103335678230439816, guid: 50d1a090b0a3b8b4c916bf9599cc9442, type: 3}
+  - {fileID: 5354249160627328452, guid: 83f4d18e2d756084a99426866ccf28ee, type: 3}
+  - {fileID: 469628163480526288, guid: cd262a14d2e90314fa0f35af6667ba42, type: 3}
+  - {fileID: 6429834299792294986, guid: fda1ca77840acb74789e565243f6e567, type: 3}
+  matches:
+  - name: First Blood
+    enemies: 00000000i
+    statScale: 1
+    championMatch: 0
+  - name: Double Trouble
+    enemies: 0000000000000000i
+    statScale: 1
+    championMatch: 0
+  - name: Wings
+    enemies: 0000000001000000i
+    statScale: 1
+    championMatch: 0
+  - name: The Heavy
+    enemies: 0200000000000000i
+    statScale: 1.05
+    championMatch: 0
+  - name: Pack Hunt
+    enemies: 010000000100000000000000i
+    statScale: 1.05
+    championMatch: 0
+  - name: Iron Wall
+    enemies: 020000000200000001000000i
+    statScale: 1.1
+    championMatch: 0
+  - name: Gauntlet
+    enemies: 00000000000000000100000002000000i
+    statScale: 1.15
+    championMatch: 0
+  - name: The Champion
+    enemies: 030000000100000001000000i
+    statScale: 1.2
+    championMatch: 1
+  startingMoney: 0
+  winRewardBase: 150
+  winRewardPerMatch: 25
+  killRewardBase: 50
+  bountyPerNumber: 1
+  markedBountyMultiplier: 3
+  markedSurvivalMultiplier: 2
+  giftMoney: {x: 20, y: 45}
+  repairCostPerHealth: 2
+  patchAmount: 25
+  healthPerNumber: 0.004
+  championNumber: 10
+  endlessScalePerMatch: 0.1
+  endlessMaxEnemies: 6
+  upgrades:
+  - type: 0
+    displayName: Armour plating
+    levelText:
+    - +25 hull
+    - +50 hull
+    - +80 hull
+    costs: 960000002c010000f4010000i
+  - type: 1
+    displayName: Engine
+    levelText:
+    - +15% power
+    - +30% power
+    - +50% power
+    costs: 960000002c010000f4010000i
+  - type: 2
+    displayName: Tyres
+    levelText:
+    - +6% grip
+    - +12% grip
+    - +20% grip
+    costs: 78000000fa00000090010000i
+  - type: 3
+    displayName: Ram plate
+    levelText:
+    - 'Ram: -20% taken, +15% dealt'
+    - 'Ram: -38% taken, +30% dealt'
+    - 'Ram: -55% taken, +50% dealt'
+    costs: 960000002c010000f4010000i
