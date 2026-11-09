@@ -42,10 +42,12 @@ namespace CarArena
         public float switchMargin = 10f;
 
         [Header("Side objectives")]
-        [Tooltip("Chance (per decision) to go for a gift / boost pad when one is worth it.")]
-        [Range(0f, 1f)] public float greed = 0.45f;
+        [Tooltip("Chance (per decision) to go for a gift when one is worth it.")]
+        [Range(0f, 1f)] public float greed = 0.25f;
+        [Tooltip("Chance (per decision) to line up a boost pad aimed at the target.")]
+        [Range(0f, 1f)] public float padChance = 0.4f;
         [Tooltip("Gifts further than this are ignored.")]
-        public float giftReach = 60f;
+        public float giftReach = 30f;
         [Tooltip("Boost pads further than this are ignored.")]
         public float padReach = 30f;
 
@@ -85,6 +87,7 @@ namespace CarArena
         Transform objective;
         Vector3 evadeFrom;
         ArenaObjectives Objectives => director != null ? director.objectives : null;
+        ArenaLayout Layout => director != null ? director.layout : null;
 
         // Per-archetype tuning, set in Awake.
         float huntThrottle, chargeThrottle, chargeDistance, flankRadius, pushTime, backOffTime;
@@ -187,19 +190,19 @@ namespace CarArena
             var obj = Objectives;
             if (obj == null || state == State.Objective || state == State.Evade) return;
             if (state != State.Hunt && state != State.Reposition && state != State.Idle) return;
-            if (Random.value > greed) return;
             Vector3 myPos = rb.position;
             float targetDist = target != null ? Flat(target.Body.position - myPos).magnitude : float.MaxValue;
 
             var gift = obj.NearestGift(myPos, out float giftDist);
             bool hurt = health != null && health.Health01 < 0.6f;
-            if (gift != null && giftDist < giftReach && (giftDist < targetDist * (hurt ? 1.4f : 0.9f) || target == null))
+            if (gift != null && giftDist < giftReach && Random.value < greed * (hurt ? 2f : 1f)
+                && (giftDist < targetDist * (hurt ? 1.2f : 0.6f) || target == null))
             {
                 objective = gift.transform;
                 Enter(State.Objective);
                 return;
             }
-            if (target != null && targetDist > 25f)
+            if (target != null && targetDist > 25f && Random.value < padChance)
             {
                 var pad = obj.PadToward(myPos, target.Body.position, padReach);
                 if (pad != null)
@@ -337,6 +340,9 @@ namespace CarArena
                     break;
             }
 
+            // Islands in the way: head for the corner that gets round them.
+            if (Layout != null && state != State.Idle) aim = Layout.Route(myPos, aim);
+
             float aimAngle = SignedAngleTo(aim);
             float steer;
 
@@ -422,6 +428,7 @@ namespace CarArena
             Vector3 p = myPos + away * Random.Range(18f, 28f);
             p = Flat(p);
             if (p.magnitude > arenaRadius) p = p.normalized * arenaRadius * 0.8f;
+            if (Layout != null) p = Layout.PushOffIslands(p, 4f);
             return p;
         }
 

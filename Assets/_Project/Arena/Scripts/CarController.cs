@@ -101,12 +101,21 @@ namespace CarArena
 
         [Header("Boost (boost pads)")]
         [Tooltip("Forward acceleration (m/s^2) while boosting, on top of the engine.")]
-        public float boostAccel = 12f;
+        public float boostAccel = 6.5f;
+        [Tooltip("Seconds after a boost ends that rams still hit harder (CarHealth.ramBoostBonus).")]
+        public float ramBoostWindow = 2f;
         public float BoostTime { get; private set; }
         public bool Boosting => BoostTime > 0f;
+        /// <summary>Boosting, or just finished: rams deal extra damage.</summary>
+        public bool RamBoosted => BoostTime > 0f || Time.time < ramBoostUntil;
+        float ramBoostUntil = -10f;
 
-        /// <summary>Shove the car forward for a while (boost pads).</summary>
-        public void Boost(float seconds) => BoostTime = Mathf.Max(BoostTime, seconds);
+        /// <summary>Shove the car forward for a while (boost pads); rams hit harder until shortly after.</summary>
+        public void Boost(float seconds)
+        {
+            BoostTime = Mathf.Max(BoostTime, seconds);
+            ramBoostUntil = Time.time + seconds + ramBoostWindow;
+        }
 
         static readonly float[] GearTopSpeed = { 0f, 11f, 19f, 28f, 38f, 48f, 60f };
         const float IdleRpm = 900f, RedlineRpm = 6800f;

@@ -51,7 +51,7 @@ namespace CarArena
         [Tooltip("Money multiplier for the whole match when the emperor marked you and you survived.")]
         public float markedSurvivalMultiplier = 2f;
         [Tooltip("Cash in each emperor's gift (random in this range).")]
-        public Vector2Int giftMoney = new Vector2Int(20, 45);
+        public Vector2Int giftMoney = new Vector2Int(10, 20);
         public float repairCostPerHealth = 2f;
         public int patchAmount = 25;
 

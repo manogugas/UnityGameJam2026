@@ -6,9 +6,11 @@ namespace CarArena
 {
     /// <summary>
     /// Side objectives that pull the fight apart, so cars spread out and meet again at speed:
-    ///  - Emperor's gifts: gold chests dropped into the quietest part of the arena (as far from every car as
-    ///    possible). Any car can grab one: it repairs a little, and the campaign pays the player cash for it.
-    ///  - Boost pads: fixed chevron strips that fire cars across the arena (BoostPad).
+    ///  - Emperor's gifts: earned by fighting. After a big hit or a kill the emperor may toss a gold chest
+    ///    near the brawl (rarely: one at a time, with a long cooldown). Any car can grab it: a small repair,
+    ///    and the campaign pays the player a little cash.
+    ///  - Boost pads: short pushes on the track straights, aimed at the crossing pit; rams hit harder for a
+    ///    moment afterwards (BoostPad).
     ///  - Crowd hazards: when cars stay bunched up, the crowd throws a burning barrel at the pile (CrowdHazard).
     /// Runs only while the ArenaDirector has a fight on; everything is cleared between matches.
     /// The AI reads gifts, pads and danger zones from here.
@@ -20,14 +22,23 @@ namespace CarArena
 
         [Header("Emperor's gifts")]
         public EmperorGift giftPrefab;
-        public float firstGiftDelay = 7f;
-        public Vector2 giftInterval = new Vector2(11f, 17f);
-        public int maxGifts = 2;
-        public float giftLifetime = 22f;
+        [Tooltip("No gifts in the first seconds of a fight.")]
+        public float firstGiftDelay = 20f;
+        [Tooltip("At least this long between gifts.")]
+        public float giftCooldown = 40f;
+        [Tooltip("A single hit of at least this much damage between two cars can earn a gift (kills always can).")]
+        public float bigHitDamage = 12f;
+        [Range(0f, 1f)] public float bigHitGiftChance = 0.5f;
+        public int maxGifts = 1;
+        public float giftLifetime = 18f;
         [Tooltip("Health a gift restores to whoever grabs it.")]
-        public float giftRepair = 15f;
-        [Tooltip("Gifts land inside +- this many metres of the centre.")]
-        public float spawnHalfExtent = 48f;
+        public float giftRepair = 10f;
+        [Tooltip("Gifts land this far (min, max) from the hit that earned them.")]
+        public Vector2 giftDistance = new Vector2(12f, 22f);
+        [Tooltip("Gifts and hazards stay inside +- this many metres of the centre.")]
+        public float spawnHalfExtent = 52f;
+        [Tooltip("Optional: keeps gifts off the islands.")]
+        public ArenaLayout layout;
 
         [Header("Crowd hazards")]
         public CrowdHazard hazardPrefab;
@@ -56,8 +67,9 @@ namespace CarArena
         readonly List<EmperorGift> gifts = new List<EmperorGift>();
         readonly List<CrowdHazard> hazards = new List<CrowdHazard>();
         readonly List<CarHealth> alive = new List<CarHealth>();
+        readonly List<CarHealth> watched = new List<CarHealth>();
         bool running;
-        float giftTimer, clusterCheck, crowdTimer, pairTimer, lastHazard = -100f;
+        float runStart, lastGift = -100f, clusterCheck, crowdTimer, pairTimer, lastHazard = -100f;
 
         void Update()
         {
@@ -66,21 +78,15 @@ namespace CarArena
             {
                 running = shouldRun;
                 Clear();
-                giftTimer = firstGiftDelay;
+                runStart = Time.time;
             }
             if (!running) return;
 
             gifts.RemoveAll(g => g == null);
             hazards.RemoveAll(h => h == null);
             CollectAlive();
+            WatchCombatants();
             if (alive.Count < 2) return;
-
-            giftTimer -= Time.deltaTime;
-            if (giftTimer <= 0f)
-            {
-                giftTimer = UnityEngine.Random.Range(giftInterval.x, giftInterval.y);
-                if (gifts.Count < maxGifts) SpawnGift();
-            }
 
             clusterCheck -= Time.deltaTime;
             if (clusterCheck <= 0f)
@@ -109,23 +115,60 @@ namespace CarArena
 
         // ------------------------------------------------------------------ gifts
 
-        void SpawnGift()
+        void WatchCombatants()
         {
-            if (giftPrefab == null) return;
-            Vector3 best = Vector3.zero;
-            float bestScore = -1f;
-            for (int i = 0; i < 40; i++)
+            foreach (var c in director.Combatants)
             {
-                var p = new Vector3(UnityEngine.Random.Range(-spawnHalfExtent, spawnHalfExtent), 0f,
-                    UnityEngine.Random.Range(-spawnHalfExtent, spawnHalfExtent));
-                // Clear of ramps, blocks and props (the sphere sits above flat ground).
-                if (Physics.CheckSphere(p + Vector3.up * 1.7f, 1.5f, ~0, QueryTriggerInteraction.Ignore)) continue;
-                float score = float.MaxValue;
-                foreach (var c in alive) score = Mathf.Min(score, Flat(c.transform.position - p).magnitude);
-                foreach (var g in gifts) if (g != null) score = Mathf.Min(score, Flat(g.transform.position - p).magnitude);
-                if (score > bestScore) { bestScore = score; best = p; }
+                if (c == null || watched.Contains(c)) continue;
+                watched.Add(c);
+                c.Damaged += OnDamaged;
+                c.Died += OnDied;
             }
-            if (bestScore < 0f) return;
+            watched.RemoveAll(c => c == null);
+        }
+
+        void OnDestroy()
+        {
+            foreach (var c in watched)
+                if (c != null) { c.Damaged -= OnDamaged; c.Died -= OnDied; }
+        }
+
+        void OnDamaged(DamageEvent e)
+        {
+            if (e.attacker == null || e.amount < bigHitDamage) return;
+            if (UnityEngine.Random.value < bigHitGiftChance) TryEarnGift(e.point);
+        }
+
+        void OnDied(CarHealth victim, CarHealth killer)
+        {
+            if (killer != null && victim != null) TryEarnGift(victim.transform.position);
+        }
+
+        /// <summary>The emperor rewards the fight: a gift lands a short way from where it happened.</summary>
+        void TryEarnGift(Vector3 near)
+        {
+            if (!running || giftPrefab == null || gifts.Count >= maxGifts) return;
+            if (Time.time - runStart < firstGiftDelay || Time.time - lastGift < giftCooldown) return;
+            if (SpawnGift(near)) lastGift = Time.time;
+        }
+
+        bool SpawnGift(Vector3 near)
+        {
+            Vector3 best = Vector3.zero;
+            bool found = false;
+            for (int i = 0; i < 30 && !found; i++)
+            {
+                float ang = UnityEngine.Random.Range(0f, Mathf.PI * 2f);
+                float dist = UnityEngine.Random.Range(giftDistance.x, giftDistance.y);
+                var p = Flat(near) + new Vector3(Mathf.Cos(ang), 0f, Mathf.Sin(ang)) * dist;
+                if (Mathf.Abs(p.x) > spawnHalfExtent || Mathf.Abs(p.z) > spawnHalfExtent) continue;
+                if (layout != null && layout.OnIsland(p, 2f)) continue;
+                // Clear of ramps, walls and props (the sphere sits above flat ground).
+                if (Physics.CheckSphere(p + Vector3.up * 1.7f, 1.5f, ~0, QueryTriggerInteraction.Ignore)) continue;
+                best = p;
+                found = true;
+            }
+            if (!found) return false;
             if (Physics.Raycast(best + Vector3.up * 10f, Vector3.down, out var hit, 20f, ~0, QueryTriggerInteraction.Ignore))
                 best.y = hit.point.y;
 
@@ -134,6 +177,7 @@ namespace CarArena
             gift.Lifetime = giftLifetime;
             gifts.Add(gift);
             if (crowd != null) crowd.Cheer(0.35f);
+            return true;
         }
 
         public void Collect(EmperorGift gift, CarHealth car)

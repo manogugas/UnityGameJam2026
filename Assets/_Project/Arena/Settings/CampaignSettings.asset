@@ -57,7 +57,7 @@ MonoBehaviour:
   bountyPerNumber: 1
   markedBountyMultiplier: 3
   markedSurvivalMultiplier: 2
-  giftMoney: {x: 20, y: 45}
+  giftMoney: {x: 10, y: 20}
   repairCostPerHealth: 2
   patchAmount: 25
   healthPerNumber: 0.004

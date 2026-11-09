@@ -36,6 +36,10 @@ namespace CarArena.EditorTools
         const float GateHeight = 5f;
         const float TunnelLength = 18f;
         static readonly Vector3[] GateSides = { Vector3.back, Vector3.left };
+        // Figure-8 track: islands span x = +-PitHalf..+-IslandOuterX, z = -IslandHalfZ..IslandHalfZ.
+        const float PitHalf = 14f;
+        const float IslandOuterX = 44f;
+        const float IslandHalfZ = 42f;
         static readonly System.Collections.Generic.List<ArenaGate> builtGates = new System.Collections.Generic.List<ArenaGate>();
 
         static Material mSand, mAsphalt, mBank, mConcrete, mRamp, mObstacle, mTyre, mCrate, mWreck;
@@ -389,69 +393,109 @@ namespace CarArena.EditorTools
 
             BuildStands(arena);
 
-            // Central ramps
-            var ramps = Empty("Ramps", arena, Vector3.zero).transform;
-            var kicker = SaveMesh(ProcMesh.Wedge(6f, 7f, 1.8f), "Kicker");
-            var tableUp = SaveMesh(ProcMesh.Wedge(8f, 6f, 1.5f), "TableRamp");
-            var small = SaveMesh(ProcMesh.Wedge(5f, 5f, 1.1f), "SmallKicker");
-            Ramp("Kicker", ramps, kicker, new Vector3(0f, 0f, -28f), 0f);
-            Ramp("TableUp", ramps, tableUp, new Vector3(0f, 0f, -9f), 0f);
-            Prim(PrimitiveType.Cube, "TableTop", ramps, new Vector3(0f, 0.75f, 1f), new Vector3(8f, 1.5f, 8f), mRamp, true);
-            Ramp("TableDown", ramps, tableUp, new Vector3(0f, 0f, 11f), 180f);
-            Ramp("SideKickerE", ramps, kicker, new Vector3(30f, 0f, 8f), -60f);
-            Ramp("SideKickerW", ramps, kicker, new Vector3(-30f, 0f, 8f), 60f);
-            Ramp("BackKicker", ramps, kicker, new Vector3(0f, 0f, 38f), 180f);
-            Ramp("SpineA", ramps, small, new Vector3(26f, 0f, -26f), 45f);
-            Ramp("SpineB", ramps, small, new Vector3(26f + 10f * 0.7071f, 0f, -26f + 10f * 0.7071f), 225f);
-            Ramp("SpineC", ramps, small, new Vector3(-30f, 0f, -22f), -30f);
-
-            // Static obstacles
-            var obstacles = Empty("Obstacles", arena, Vector3.zero).transform;
-            Vector3[] blocks =
+            // Figure-8 track: two raised spinas (islands) run north-south either side of the centre. The track
+            // loops round both of them and crosses itself in the open sand pit between them, where the fights
+            // happen. The south gate opens straight up the pit. Rallycross bits: table jumps on the side
+            // straights, banked turns at the north and east walls, sand pit vs asphalt outer lanes.
+            var track = Empty("Track", arena, Vector3.zero).transform;
+            var layout = track.gameObject.AddComponent<ArenaLayout>();
+            layout.islands = new[]
             {
-                new Vector3(15, 0, -15), new Vector3(-15, 0, -15), new Vector3(18, 0, 26), new Vector3(-18, 0, 26),
-                new Vector3(42, 0, -4), new Vector3(-42, 0, -4), new Vector3(10, 0, 46), new Vector3(-12, 0, 47),
+                new Rect(-IslandOuterX, -IslandHalfZ, IslandOuterX - PitHalf, IslandHalfZ * 2f),
+                new Rect(PitHalf, -IslandHalfZ, IslandOuterX - PitHalf, IslandHalfZ * 2f),
             };
-            for (int i = 0; i < blocks.Length; i++)
-                Prim(PrimitiveType.Cube, "Block" + i, obstacles, blocks[i] + Vector3.up * 0.6f, new Vector3(3f, 1.2f, 1.2f),
-                    mConcrete, true, Quaternion.Euler(0f, i * 37f, 0f));
-            Vector3[] pillars = { new Vector3(36, 0, -36), new Vector3(-36, 0, -36), new Vector3(36, 0, 32), new Vector3(-36, 0, 32) };
-            for (int i = 0; i < pillars.Length; i++)
-                Prim(PrimitiveType.Cylinder, "Pillar" + i, obstacles, pillars[i] + Vector3.up * 2f, new Vector3(3f, 2f, 3f), mObstacle, true);
+            var kerbRed = Mat("KerbRed", new Color(0.78f, 0.12f, 0.1f), 0.2f);
+            var kerbWhite = Mat("KerbWhite", new Color(0.92f, 0.9f, 0.86f), 0.2f);
+            foreach (float side in new[] { -1f, 1f })
+                Spina(track, side * (PitHalf + IslandOuterX) * 0.5f, IslandOuterX - PitHalf, IslandHalfZ * 2f, kerbRed, kerbWhite);
 
-            // Slalom of barriers on the flat south band, leaving the gate in the middle clear.
-            float[] slalomX = { -45f, -33f, -21f, 21f, 33f, 45f };
-            for (int i = 0; i < slalomX.Length; i++)
-            {
-                float z = -bandMid + (i % 2 == 0 ? 5f : -5f);
-                Prim(PrimitiveType.Cube, "Barrier" + i, obstacles, new Vector3(slalomX[i], 0.5f, z), new Vector3(5f, 1f, 0.7f), mConcrete, true);
-            }
+            // Table-top jumps on the side straights.
+            var tableUp = SaveMesh(ProcMesh.Wedge(8f, 6f, 1.5f), "TableRamp");
+            TableJump(track, tableUp, new Vector3(-60f, 0f, 22f));
+            TableJump(track, tableUp, new Vector3(54f, 0f, -20f));
 
-            // Movable props
+            // Tyre stacks marking the island corners (loose: plough through them).
             var props = Empty("Props", arena, Vector3.zero).transform;
-            Vector3[] tyres = { new Vector3(8, 0, -35), new Vector3(-8, 0, -35), new Vector3(44, 0, -16), new Vector3(-44, 0, -16), new Vector3(6, 0, 20), new Vector3(-6, 0, 20) };
-            for (int i = 0; i < tyres.Length; i++)
-                for (int k = 0; k < 3; k++)
-                {
-                    var t = Prim(PrimitiveType.Cylinder, $"Tyre{i}_{k}", props, tyres[i] + Vector3.up * (0.15f + k * 0.3f),
-                        new Vector3(0.75f, 0.15f, 0.75f), mTyre, true);
-                    Object.DestroyImmediate(t.GetComponent<Collider>());
-                    var mc = t.AddComponent<MeshCollider>();
-                    mc.convex = true;
-                    Prop(t, 18f);
-                }
+            int stack = 0;
+            foreach (float sx in new[] { -1f, 1f })
+                foreach (float x in new[] { PitHalf, IslandOuterX })
+                    foreach (float z in new[] { -IslandHalfZ, IslandHalfZ })
+                    {
+                        Vector3 corner = new Vector3(sx * x, 0f, z);
+                        Vector3 outward = new Vector3(sx * (x == PitHalf ? -1f : 1f), 0f, Mathf.Sign(z)).normalized;
+                        TyreStack(props, corner + outward * 2.6f, stack++);
+                    }
+
+            // A crate pile to smash on the south straight, and a few old wrecks in the corners.
             int n = 0;
             for (int row = 0; row < 3; row++)
                 for (int c = 0; c < 3 - row; c++)
                 {
                     var crate = Prim(PrimitiveType.Cube, "Crate" + n++, props,
-                        new Vector3(-22f + (c - (2 - row) * 0.5f) * 1.05f, 0.5f + row * 1.0f, -8f), Vector3.one, mCrate, true);
+                        new Vector3(-32f + (c - (2 - row) * 0.5f) * 1.05f, 0.5f + row * 1.0f, -60f), Vector3.one, mCrate, true);
                     Prop(crate, 40f);
                 }
+            Wreck("Wreck0", props, new Vector3(-64f, 0f, -64f), 40f);
+            Wreck("Wreck1", props, new Vector3(-64f, 0f, 62f), -60f);
+            Wreck("Wreck2", props, new Vector3(36f, 0f, -64f), 15f);
+        }
 
-            Wreck("Wreck0", props, new Vector3(20f, 0f, -40f), 30f);
-            Wreck("Wreck1", props, new Vector3(-25f, 0f, -36f), -70f);
-            Wreck("Wreck3", props, new Vector3(-48f, 0f, 22f), 10f);
+        /// <summary>Raised island the track loops round: stone plinth with red/white kerbs, an obelisk,
+        /// columns with gold ornaments and banners (a Roman circus spina).</summary>
+        static void Spina(Transform parent, float cx, float width, float length, Material red, Material white)
+        {
+            var root = Empty("Spina", parent, new Vector3(cx, 0f, 0f)).transform;
+            Prim(PrimitiveType.Cube, "Plinth", root, new Vector3(0f, 0.7f, 0f), new Vector3(width, 1.4f, length), mStone2, true);
+            Prim(PrimitiveType.Cube, "Cap", root, new Vector3(0f, 1.45f, 0f), new Vector3(width - 1f, 0.1f, length - 1f), mStone);
+
+            // Kerbs: alternating red/white tiles hugging the plinth (visual only).
+            var kerbs = Empty("Kerbs", root, Vector3.zero).transform;
+            float hw = width * 0.5f + 0.45f, hl = length * 0.5f + 0.45f;
+            int k = 0;
+            for (float z = -hl; z < hl - 0.1f; z += 3f, k++)
+                foreach (float sx in new[] { -1f, 1f })
+                    Kerb(kerbs, new Vector3(sx * hw, 0.03f, z + 1.5f), new Vector3(0.9f, 0.06f, 3f), k % 2 == 0 ? red : white);
+            for (float x = -hw; x < hw - 0.1f; x += 3f, k++)
+                foreach (float sz in new[] { -1f, 1f })
+                    Kerb(kerbs, new Vector3(x + 1.5f, 0.03f, sz * hl), new Vector3(3f, 0.06f, 0.9f), k % 2 == 0 ? red : white);
+
+            Prim(PrimitiveType.Cube, "ObeliskBase", root, new Vector3(0f, 2.2f, 0f), new Vector3(3f, 1.6f, 3f), mStone, true);
+            Prim(PrimitiveType.Cube, "Obelisk", root, new Vector3(0f, 9f, 0f), new Vector3(1.4f, 12f, 1.4f), mStone, true);
+            Prim(PrimitiveType.Cube, "ObeliskTip", root, new Vector3(0f, 15.3f, 0f), new Vector3(0.9f, 0.9f, 0.9f), mNumberGold, false, Quaternion.Euler(45f, 0f, 45f));
+            foreach (float z in new[] { -length * 0.33f, length * 0.33f })
+            {
+                Prim(PrimitiveType.Cylinder, "Column", root, new Vector3(0f, 4.4f, z), new Vector3(1.2f, 3f, 1.2f), mStone, true);
+                Prim(PrimitiveType.Sphere, "Ornament", root, new Vector3(0f, 7.9f, z), new Vector3(1.3f, 1.3f, 1.3f), mNumberGold);
+                Prim(PrimitiveType.Cube, "Banner", root, new Vector3(0f, 3.2f, z * 0.5f), new Vector3(0.1f, 2.4f, 6f), z < 0f ? mClothRed : mClothPurple);
+            }
+        }
+
+        static void Kerb(Transform parent, Vector3 pos, Vector3 size, Material mat)
+        {
+            var go = Prim(PrimitiveType.Cube, "Kerb", parent, pos, size, mat);
+            go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+        }
+
+        /// <summary>Up ramp, flat top, down ramp along Z (jumpable either way).</summary>
+        static void TableJump(Transform parent, Mesh ramp, Vector3 c)
+        {
+            var root = Empty("TableJump", parent, Vector3.zero).transform;
+            Ramp("TableUp", root, ramp, c + new Vector3(0f, 0f, -10f), 0f);
+            Prim(PrimitiveType.Cube, "TableTop", root, c + new Vector3(0f, 0.75f, 1f), new Vector3(8f, 1.5f, 8f), mRamp, true);
+            Ramp("TableDown", root, ramp, c + new Vector3(0f, 0f, 11f), 180f);
+        }
+
+        static void TyreStack(Transform parent, Vector3 pos, int index)
+        {
+            for (int k = 0; k < 3; k++)
+            {
+                var t = Prim(PrimitiveType.Cylinder, $"Tyre{index}_{k}", parent, pos + Vector3.up * (0.15f + k * 0.3f),
+                    new Vector3(0.75f, 0.15f, 0.75f), mTyre, true);
+                Object.DestroyImmediate(t.GetComponent<Collider>());
+                var mc = t.AddComponent<MeshCollider>();
+                mc.convex = true;
+                Prop(t, 18f);
+            }
         }
 
         /// <summary>Loose physics prop. Interpolated, otherwise it visibly stutters when resting on
@@ -629,6 +673,7 @@ namespace CarArena.EditorTools
             director.enemyCount = 4;
             director.waitForIntro = true;
             director.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            director.layout = Object.FindAnyObjectByType<ArenaLayout>();
             var hud = playerCar.GetComponent<CarHud>();
             hud.director = director;
             PrefabUtility.RecordPrefabInstancePropertyModifications(hud); // keep the scene-only reference on the prefab instance
@@ -1445,19 +1490,20 @@ namespace CarArena.EditorTools
             objectives.giftPrefab = GiftPrefab();
             objectives.hazardPrefab = HazardPrefab();
             director.objectives = objectives;
+            objectives.layout = director.layout;
             var campaign = Object.FindAnyObjectByType<CampaignDirector>();
             if (campaign != null) campaign.objectives = objectives;
 
-            // Boost pads on open lanes: each one fires you across the arena (two of them through a kicker ramp).
+            // Boost pads on the straights: down the pit from both ends, and up the side lanes into the jumps.
             var padOn = GlowMat("BoostChevronOn", new Color(1f, 0.55f, 0.1f), new Color(2.2f, 1.0f, 0.15f), false);
             var padOff = GlowMat("BoostChevronOff", new Color(0.35f, 0.2f, 0.08f), new Color(0.12f, 0.05f, 0f), false);
             var padBase = Mat("BoostPadBase", new Color(0.12f, 0.12f, 0.13f), 0.3f);
             var pads = new System.Collections.Generic.List<BoostPad>
             {
-                BoostPadAt(go.transform, new Vector3(-46f, 0f, 40f), 90f, padBase, padOn, padOff),   // east along z=40, over the back kicker
-                BoostPadAt(go.transform, new Vector3(50f, 0f, -42f), 0f, padBase, padOn, padOff),    // north up the east lane
-                BoostPadAt(go.transform, new Vector3(-48f, 0f, -30f), 90f, padBase, padOn, padOff),  // east along z=-30, over the front kicker
-                BoostPadAt(go.transform, new Vector3(44f, 0f, 55f), -90f, padBase, padOn, padOff),   // west along the north lane
+                BoostPadAt(go.transform, new Vector3(5f, 0f, 56f), 180f, padBase, padOn, padOff),    // south, down the pit
+                BoostPadAt(go.transform, new Vector3(-7f, 0f, -50f), 0f, padBase, padOn, padOff),    // north, up the pit (beside the gate exit)
+                BoostPadAt(go.transform, new Vector3(-60f, 0f, -28f), 0f, padBase, padOn, padOff),   // north up the west lane, into the jump
+                BoostPadAt(go.transform, new Vector3(54f, 0f, 28f), 180f, padBase, padOn, padOff),   // south down the east lane, into the jump
             };
             objectives.pads = pads.ToArray();
         }
@@ -1675,6 +1721,7 @@ namespace CarArena.EditorTools
             }
             s.enemyPrefabs = enemyPrefabs; // always point at the freshly built prefabs
             if (s.championNumber < 10) s.championNumber = 10; // numbers are two digits now
+            if (s.giftMoney == new Vector2Int(20, 45)) s.giftMoney = new Vector2Int(10, 20); // gifts are a bonus, fights pay
             EditorUtility.SetDirty(s);
             return s;
         }

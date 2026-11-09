@@ -43,6 +43,8 @@ namespace CarArena
         public ArenaCrowd crowd;
         [Tooltip("Side objectives (gifts, boost pads, crowd hazards). The AI reads them from here.")]
         public ArenaObjectives objectives;
+        [Tooltip("Track layout (islands the AI routes around).")]
+        public ArenaLayout layout;
 
         public IReadOnlyList<CarHealth> Enemies => enemies;
         /// <summary>Everyone who can be targeted: the player plus all enemies (dead ones are skipped by the AI).</summary>

@@ -41,6 +41,10 @@ namespace CarArena
         public float incomingDamageScale = 1f;
         [Tooltip("Extra damage this car deals when it rams another (ram plate upgrade).")]
         public float ramDamageDealt = 1f;
+        [Tooltip("Ram damage multiplier while this car is boosted (boost pad, and a couple of seconds after).")]
+        public float ramBoostBonus = 1.25f;
+        /// <summary>Multiplier on damage this car deals by ramming right now.</summary>
+        public float RamPower => ramDamageDealt * (car != null && car.RamBoosted ? ramBoostBonus : 1f);
         [Tooltip("The emperor has marked this car's number this match: everyone hunts it, and wrecking it pays extra.")]
         public bool marked;
         [Tooltip("Seconds a hit from another car still counts as the kill.")]
@@ -123,7 +127,7 @@ namespace CarArena
             float mine = Vector3.Dot(car.Body.linearVelocity, toPoint);
             float theirs = Vector3.Dot(info.otherBody.linearVelocity, -toPoint);
             if (mine > theirs + rammingMargin) return rammerMultiplier;
-            if (theirs > mine + rammingMargin) return rammedMultiplier * (attacker != null ? attacker.ramDamageDealt : 1f);
+            if (theirs > mine + rammingMargin) return rammedMultiplier * (attacker != null ? attacker.RamPower : 1f);
             return 1f;
         }
 
