@@ -22,9 +22,7 @@ namespace CarArena.EditorTools
 
         // Square arena: inner wall face at +-ArenaHalf, sand in the middle, asphalt band around it.
         const float ArenaHalf = 75f;
-        const float SandHalf = 55f;
-        const float BankDepth = 11f;
-        const float BankHeight = 3.6f;
+        const float SandHalf = 74f; // sand run-off right up to the walls: the road is the only asphalt
         const float WallHeight = 6f;
         // Stands (the crowd component uses the same numbers).
         const int StandRows = 14;
@@ -36,10 +34,13 @@ namespace CarArena.EditorTools
         const float GateHeight = 5f;
         const float TunnelLength = 18f;
         static readonly Vector3[] GateSides = { Vector3.back, Vector3.left };
-        // Figure-8 track: islands span x = +-PitHalf..+-IslandOuterX, z = -IslandHalfZ..IslandHalfZ.
-        const float PitHalf = 14f;
-        const float IslandOuterX = 44f;
-        const float IslandHalfZ = 42f;
+        // Figure-8 track on the SW-NE diagonal: loops of radius LoopRadius centred at +-(LoopOffset, LoopOffset).
+        // With LoopRadius == LoopOffset the straights run along the X and Z axes and cross at 90 degrees in the
+        // middle of the arena.
+        const float LoopOffset = 30f;
+        const float LoopRadius = 30f;
+        const float TrackHalfWidth = 8f;
+        const float IslandRadius = 21f;
         static readonly System.Collections.Generic.List<ArenaGate> builtGates = new System.Collections.Generic.List<ArenaGate>();
 
         static Material mSand, mAsphalt, mBank, mConcrete, mRamp, mObstacle, mTyre, mCrate, mWreck;
@@ -353,15 +354,6 @@ namespace CarArena.EditorTools
             Tag(Prim(PrimitiveType.Cube, "AsphaltE", arena, new Vector3(bandMid, -0.1f, 0f), new Vector3(band, 0.2f, SandHalf * 2f), mAsphalt, true), asphalt);
             Tag(Prim(PrimitiveType.Cube, "AsphaltW", arena, new Vector3(-bandMid, -0.1f, 0f), new Vector3(band, 0.2f, SandHalf * 2f), mAsphalt, true), asphalt);
 
-            // Banked wall ramps along the north and east sides (half the perimeter), tapering out before the corners.
-            var bank = SaveMesh(ProcMesh.BankStrip((ArenaHalf - 5f) * 2f, BankDepth, BankHeight, 70, 16, 12f, "BankStrip"), "BankStrip");
-            var bankN = MeshObj("BankedRampN", arena, new Vector3(0f, 0f, ArenaHalf - BankDepth - 0.05f), bank, mBank);
-            bankN.AddComponent<MeshCollider>();
-            Tag(bankN, asphalt);
-            var bankE = MeshObj("BankedRampE", arena, new Vector3(ArenaHalf - BankDepth - 0.05f, 0f, 0f), bank, mBank, Quaternion.Euler(0f, 90f, 0f));
-            bankE.AddComponent<MeshCollider>();
-            Tag(bankE, asphalt);
-
             // Podium wall (the arena edge) with a parapet.
             var wall = Empty("PodiumWall", arena, Vector3.zero).transform;
             foreach (var dir in new[] { Vector3.forward, Vector3.right, Vector3.back, Vector3.left })
@@ -393,96 +385,157 @@ namespace CarArena.EditorTools
 
             BuildStands(arena);
 
-            // Figure-8 track: two raised spinas (islands) run north-south either side of the centre. The track
-            // loops round both of them and crosses itself in the open sand pit between them, where the fights
-            // happen. The south gate opens straight up the pit. Rallycross bits: table jumps on the side
-            // straights, banked turns at the north and east walls, sand pit vs asphalt outer lanes.
+            // Figure-8 track: an asphalt road looping round two round infield islands, its straights crossing
+            // at right angles in the middle (where the T-bones happen). The NE loop runs up onto the banked
+            // north and east walls; off the road is loose sand run-off. Both gates open beside the SW loop.
             var track = Empty("Track", arena, Vector3.zero).transform;
+            var centreline = Figure8Centreline();
+            var road = MeshObj("Road", track, Vector3.zero, SaveMesh(RibbonMesh(centreline, TrackHalfWidth, 0.02f, "Figure8Road"), "Figure8Road"), mAsphalt);
+            road.AddComponent<MeshCollider>();
+            road.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            Tag(road, asphalt);
+
             var layout = track.gameObject.AddComponent<ArenaLayout>();
-            layout.islands = new[]
-            {
-                new Rect(-IslandOuterX, -IslandHalfZ, IslandOuterX - PitHalf, IslandHalfZ * 2f),
-                new Rect(PitHalf, -IslandHalfZ, IslandOuterX - PitHalf, IslandHalfZ * 2f),
-            };
+            var ne = new Vector2(LoopOffset, LoopOffset);
+            var sw = new Vector2(-LoopOffset, -LoopOffset);
+            layout.islandCentres = new[] { ne, sw };
+            layout.islandRadii = new[] { IslandRadius, IslandRadius };
+
             var kerbRed = Mat("KerbRed", new Color(0.78f, 0.12f, 0.1f), 0.2f);
             var kerbWhite = Mat("KerbWhite", new Color(0.92f, 0.9f, 0.86f), 0.2f);
-            foreach (float side in new[] { -1f, 1f })
-                Spina(track, side * (PitHalf + IslandOuterX) * 0.5f, IslandOuterX - PitHalf, IslandHalfZ * 2f, kerbRed, kerbWhite);
+            var kerbs = Empty("Kerbs", track, Vector3.zero).transform;
+            float outerKerb = LoopRadius + TrackHalfWidth + 0.45f;
+            KerbArc(kerbs, ne, outerKerb, -90f, 180f, kerbRed, kerbWhite);
+            KerbArc(kerbs, sw, outerKerb, 90f, 360f, kerbRed, kerbWhite);
+            foreach (var c in new[] { ne, sw })
+            {
+                RoundIsland(track, c, IslandRadius);
+                KerbArc(kerbs, c, IslandRadius + 0.45f, 0f, 360f, kerbRed, kerbWhite);
+            }
 
-            // Table-top jumps on the side straights.
-            var tableUp = SaveMesh(ProcMesh.Wedge(8f, 6f, 1.5f), "TableRamp");
-            TableJump(track, tableUp, new Vector3(-60f, 0f, 22f));
-            TableJump(track, tableUp, new Vector3(54f, 0f, -20f));
-
-            // Tyre stacks marking the island corners (loose: plough through them).
+            // Tyre walls on the outside of each loop's far side (loose: plough through them).
             var props = Empty("Props", arena, Vector3.zero).transform;
             int stack = 0;
-            foreach (float sx in new[] { -1f, 1f })
-                foreach (float x in new[] { PitHalf, IslandOuterX })
-                    foreach (float z in new[] { -IslandHalfZ, IslandHalfZ })
-                    {
-                        Vector3 corner = new Vector3(sx * x, 0f, z);
-                        Vector3 outward = new Vector3(sx * (x == PitHalf ? -1f : 1f), 0f, Mathf.Sign(z)).normalized;
-                        TyreStack(props, corner + outward * 2.6f, stack++);
-                    }
+            float tyreR = LoopRadius + TrackHalfWidth + 2.6f;
+            foreach (float ang in new[] { 10f, 45f, 80f })
+            {
+                float a = ang * Mathf.Deg2Rad;
+                TyreStack(props, new Vector3(ne.x + Mathf.Cos(a) * tyreR, 0f, ne.y + Mathf.Sin(a) * tyreR), stack++);
+                TyreStack(props, new Vector3(sw.x - Mathf.Cos(a) * tyreR, 0f, sw.y - Mathf.Sin(a) * tyreR), stack++);
+            }
 
-            // A crate pile to smash on the south straight, and a few old wrecks in the corners.
+            // A crate pile in the NW run-off, and a few old wrecks off the track.
             int n = 0;
             for (int row = 0; row < 3; row++)
                 for (int c = 0; c < 3 - row; c++)
                 {
                     var crate = Prim(PrimitiveType.Cube, "Crate" + n++, props,
-                        new Vector3(-32f + (c - (2 - row) * 0.5f) * 1.05f, 0.5f + row * 1.0f, -60f), Vector3.one, mCrate, true);
+                        new Vector3(-38f + (c - (2 - row) * 0.5f) * 1.05f, 0.5f + row * 1.0f, 38f), Vector3.one, mCrate, true);
                     Prop(crate, 40f);
                 }
-            Wreck("Wreck0", props, new Vector3(-64f, 0f, -64f), 40f);
-            Wreck("Wreck1", props, new Vector3(-64f, 0f, 62f), -60f);
-            Wreck("Wreck2", props, new Vector3(36f, 0f, -64f), 15f);
+            Wreck("Wreck0", props, new Vector3(-62f, 0f, 62f), 40f);
+            Wreck("Wreck1", props, new Vector3(48f, 0f, -48f), -60f);
+            Wreck("Wreck2", props, new Vector3(56f, 0f, -20f), 15f);
         }
 
-        /// <summary>Raised island the track loops round: stone plinth with red/white kerbs, an obelisk,
-        /// columns with gold ornaments and banners (a Roman circus spina).</summary>
-        static void Spina(Transform parent, float cx, float width, float length, Material red, Material white)
+        /// <summary>Centreline of the figure 8: north up the Z straight, round the NE loop, west along the X
+        /// straight through the crossing, round the SW loop, and back north to the crossing.</summary>
+        static System.Collections.Generic.List<Vector3> Figure8Centreline()
         {
-            var root = Empty("Spina", parent, new Vector3(cx, 0f, 0f)).transform;
-            Prim(PrimitiveType.Cube, "Plinth", root, new Vector3(0f, 0.7f, 0f), new Vector3(width, 1.4f, length), mStone2, true);
-            Prim(PrimitiveType.Cube, "Cap", root, new Vector3(0f, 1.45f, 0f), new Vector3(width - 1f, 0.1f, length - 1f), mStone);
-
-            // Kerbs: alternating red/white tiles hugging the plinth (visual only).
-            var kerbs = Empty("Kerbs", root, Vector3.zero).transform;
-            float hw = width * 0.5f + 0.45f, hl = length * 0.5f + 0.45f;
-            int k = 0;
-            for (float z = -hl; z < hl - 0.1f; z += 3f, k++)
-                foreach (float sx in new[] { -1f, 1f })
-                    Kerb(kerbs, new Vector3(sx * hw, 0.03f, z + 1.5f), new Vector3(0.9f, 0.06f, 3f), k % 2 == 0 ? red : white);
-            for (float x = -hw; x < hw - 0.1f; x += 3f, k++)
-                foreach (float sz in new[] { -1f, 1f })
-                    Kerb(kerbs, new Vector3(x + 1.5f, 0.03f, sz * hl), new Vector3(3f, 0.06f, 0.9f), k % 2 == 0 ? red : white);
-
-            Prim(PrimitiveType.Cube, "ObeliskBase", root, new Vector3(0f, 2.2f, 0f), new Vector3(3f, 1.6f, 3f), mStone, true);
-            Prim(PrimitiveType.Cube, "Obelisk", root, new Vector3(0f, 9f, 0f), new Vector3(1.4f, 12f, 1.4f), mStone, true);
-            Prim(PrimitiveType.Cube, "ObeliskTip", root, new Vector3(0f, 15.3f, 0f), new Vector3(0.9f, 0.9f, 0.9f), mNumberGold, false, Quaternion.Euler(45f, 0f, 45f));
-            foreach (float z in new[] { -length * 0.33f, length * 0.33f })
+            var pts = new System.Collections.Generic.List<Vector3>();
+            float L = LoopOffset, R = LoopRadius;
+            void Line(Vector2 a, Vector2 b)
             {
-                Prim(PrimitiveType.Cylinder, "Column", root, new Vector3(0f, 4.4f, z), new Vector3(1.2f, 3f, 1.2f), mStone, true);
-                Prim(PrimitiveType.Sphere, "Ornament", root, new Vector3(0f, 7.9f, z), new Vector3(1.3f, 1.3f, 1.3f), mNumberGold);
-                Prim(PrimitiveType.Cube, "Banner", root, new Vector3(0f, 3.2f, z * 0.5f), new Vector3(0.1f, 2.4f, 6f), z < 0f ? mClothRed : mClothPurple);
+                int count = Mathf.Max(1, Mathf.CeilToInt((b - a).magnitude / 2f));
+                for (int i = 0; i < count; i++)
+                {
+                    var q = Vector2.Lerp(a, b, i / (float)count);
+                    pts.Add(new Vector3(q.x, 0f, q.y));
+                }
+            }
+            void Arc(Vector2 c, float fromDeg, float toDeg)
+            {
+                int count = Mathf.CeilToInt(Mathf.Abs(toDeg - fromDeg) / 3f);
+                for (int i = 0; i < count; i++)
+                {
+                    float a = Mathf.Lerp(fromDeg, toDeg, i / (float)count) * Mathf.Deg2Rad;
+                    pts.Add(new Vector3(c.x + Mathf.Cos(a) * R, 0f, c.y + Mathf.Sin(a) * R));
+                }
+            }
+            Line(Vector2.zero, new Vector2(0f, L));
+            Arc(new Vector2(L, L), 180f, -90f);
+            Line(new Vector2(L, 0f), new Vector2(-L, 0f));
+            Arc(new Vector2(-L, -L), 90f, 360f);
+            Line(new Vector2(0f, -L), Vector2.zero);
+            return pts;
+        }
+
+        /// <summary>Flat road strip along a closed centreline (faces up, UVs along the road).</summary>
+        static Mesh RibbonMesh(System.Collections.Generic.List<Vector3> pts, float halfWidth, float y, string name)
+        {
+            int n = pts.Count;
+            var verts = new Vector3[n * 2];
+            var uvs = new Vector2[n * 2];
+            var tris = new int[n * 6];
+            float v = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                Vector3 prev = pts[(i - 1 + n) % n], next = pts[(i + 1) % n];
+                Vector3 t = (next - prev).normalized;
+                Vector3 left = new Vector3(-t.z, 0f, t.x);
+                if (i > 0) v += Vector3.Distance(pts[i], pts[i - 1]) / (halfWidth * 2f);
+                verts[i * 2] = pts[i] + left * halfWidth + Vector3.up * y;
+                verts[i * 2 + 1] = pts[i] - left * halfWidth + Vector3.up * y;
+                uvs[i * 2] = new Vector2(0f, v);
+                uvs[i * 2 + 1] = new Vector2(1f, v);
+                int j = (i + 1) % n;
+                int a = i * 2, b = i * 2 + 1, c = j * 2, d = j * 2 + 1;
+                tris[i * 6] = a; tris[i * 6 + 1] = c; tris[i * 6 + 2] = b;
+                tris[i * 6 + 3] = b; tris[i * 6 + 4] = c; tris[i * 6 + 5] = d;
+            }
+            var mesh = new Mesh { name = name, vertices = verts, uv = uvs, triangles = tris };
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>Raised round infield: stone plinth, an obelisk and a ring of columns with gold ornaments.</summary>
+        static void RoundIsland(Transform parent, Vector2 c, float radius)
+        {
+            var root = Empty("Island", parent, new Vector3(c.x, 0f, c.y)).transform;
+            var plinth = Prim(PrimitiveType.Cylinder, "Plinth", root, new Vector3(0f, 0.6f, 0f), new Vector3(radius * 2f, 0.6f, radius * 2f), mStone2);
+            plinth.AddComponent<MeshCollider>().sharedMesh = plinth.GetComponent<MeshFilter>().sharedMesh;
+            Prim(PrimitiveType.Cylinder, "Cap", root, new Vector3(0f, 1.22f, 0f), new Vector3(radius * 2f - 1f, 0.03f, radius * 2f - 1f), mStone);
+            Prim(PrimitiveType.Cube, "ObeliskBase", root, new Vector3(0f, 2f, 0f), new Vector3(3f, 1.6f, 3f), mStone, true);
+            Prim(PrimitiveType.Cube, "Obelisk", root, new Vector3(0f, 8.8f, 0f), new Vector3(1.4f, 12f, 1.4f), mStone, true);
+            Prim(PrimitiveType.Cube, "ObeliskTip", root, new Vector3(0f, 15.1f, 0f), new Vector3(0.9f, 0.9f, 0.9f), mNumberGold, false, Quaternion.Euler(45f, 0f, 45f));
+            for (int i = 0; i < 6; i++)
+            {
+                float a = i / 6f * Mathf.PI * 2f;
+                var pos = new Vector3(Mathf.Cos(a), 0f, Mathf.Sin(a)) * (radius * 0.6f);
+                Prim(PrimitiveType.Cylinder, "Column", root, pos + Vector3.up * 4.2f, new Vector3(1.1f, 3f, 1.1f), mStone, true);
+                Prim(PrimitiveType.Sphere, "Ornament", root, pos + Vector3.up * 7.7f, new Vector3(1.2f, 1.2f, 1.2f), mNumberGold);
+                if (i % 2 == 0)
+                    Prim(PrimitiveType.Cube, "Banner", root, pos * 0.55f + Vector3.up * 3f, new Vector3(0.1f, 2.4f, 4f),
+                        i % 4 == 0 ? mClothRed : mClothPurple, false, Quaternion.LookRotation(pos));
             }
         }
 
-        static void Kerb(Transform parent, Vector3 pos, Vector3 size, Material mat)
+        /// <summary>Alternating red/white kerb tiles along an arc (visual only).</summary>
+        static void KerbArc(Transform parent, Vector2 c, float radius, float fromDeg, float toDeg, Material red, Material white)
         {
-            var go = Prim(PrimitiveType.Cube, "Kerb", parent, pos, size, mat);
-            go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-        }
-
-        /// <summary>Up ramp, flat top, down ramp along Z (jumpable either way).</summary>
-        static void TableJump(Transform parent, Mesh ramp, Vector3 c)
-        {
-            var root = Empty("TableJump", parent, Vector3.zero).transform;
-            Ramp("TableUp", root, ramp, c + new Vector3(0f, 0f, -10f), 0f);
-            Prim(PrimitiveType.Cube, "TableTop", root, c + new Vector3(0f, 0.75f, 1f), new Vector3(8f, 1.5f, 8f), mRamp, true);
-            Ramp("TableDown", root, ramp, c + new Vector3(0f, 0f, 11f), 180f);
+            float arcLen = Mathf.Abs(toDeg - fromDeg) * Mathf.Deg2Rad * radius;
+            int count = Mathf.Max(1, Mathf.CeilToInt(arcLen / 2.5f));
+            float tile = arcLen / count;
+            for (int i = 0; i < count; i++)
+            {
+                float a = Mathf.Lerp(fromDeg, toDeg, (i + 0.5f) / count) * Mathf.Deg2Rad;
+                var pos = new Vector3(c.x + Mathf.Cos(a) * radius, 0.03f, c.y + Mathf.Sin(a) * radius);
+                var tangent = new Vector3(-Mathf.Sin(a), 0f, Mathf.Cos(a));
+                var go = Prim(PrimitiveType.Cube, "Kerb", parent, pos, new Vector3(0.9f, 0.06f, tile * 0.98f), i % 2 == 0 ? red : white,
+                    false, Quaternion.LookRotation(tangent));
+                go.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            }
         }
 
         static void TyreStack(Transform parent, Vector3 pos, int index)
@@ -1361,15 +1414,16 @@ namespace CarArena.EditorTools
         static void BuildTablet(Transform car)
         {
             const int uiLayer = 5; // built-in "UI" layer: the garage camera doesn't render it
-            var tablet = Empty("Tablet", car, new Vector3(-0.35f, 0.74f, -0.13f), Quaternion.Euler(10f, 0f, 0f));
-            Prim(PrimitiveType.Cube, "Body", tablet.transform, Vector3.zero, new Vector3(0.46f, 0.3f, 0.018f), mTrim);
-            Prim(PrimitiveType.Cube, "Grip", tablet.transform, new Vector3(0f, -0.16f, 0.01f), new Vector3(0.2f, 0.03f, 0.03f), mInterior);
+            // Big enough to fill most of the windscreen from the driver's seat (about 0.65 x 0.42 m).
+            var tablet = Empty("Tablet", car, new Vector3(-0.37f, 0.785f, -0.1f), Quaternion.Euler(8f, 0f, 0f));
+            Prim(PrimitiveType.Cube, "Body", tablet.transform, Vector3.zero, new Vector3(0.65f, 0.42f, 0.018f), mTrim);
+            Prim(PrimitiveType.Cube, "Grip", tablet.transform, new Vector3(0f, -0.225f, 0.01f), new Vector3(0.26f, 0.035f, 0.03f), mInterior);
             var screen = new GameObject("Screen", typeof(RectTransform));
             screen.transform.SetParent(tablet.transform, false);
             var rt = screen.GetComponent<RectTransform>();
             rt.sizeDelta = new Vector2(1000f, 640f);
             rt.localPosition = new Vector3(0f, 0f, -0.0105f);
-            rt.localScale = Vector3.one * 0.00042f;
+            rt.localScale = Vector3.one * 0.0006f;
             var canvas = screen.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.WorldSpace;
             screen.AddComponent<UnityEngine.UI.GraphicRaycaster>();
@@ -1488,22 +1542,21 @@ namespace CarArena.EditorTools
             objectives.director = director;
             objectives.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
             objectives.giftPrefab = GiftPrefab();
-            objectives.hazardPrefab = HazardPrefab();
             director.objectives = objectives;
             objectives.layout = director.layout;
             var campaign = Object.FindAnyObjectByType<CampaignDirector>();
             if (campaign != null) campaign.objectives = objectives;
 
-            // Boost pads on the straights: down the pit from both ends, and up the side lanes into the jumps.
+            // Boost pads on the four half-straights, all pointing at the crossing: boost in, T-bone harder.
             var padOn = GlowMat("BoostChevronOn", new Color(1f, 0.55f, 0.1f), new Color(2.2f, 1.0f, 0.15f), false);
             var padOff = GlowMat("BoostChevronOff", new Color(0.35f, 0.2f, 0.08f), new Color(0.12f, 0.05f, 0f), false);
             var padBase = Mat("BoostPadBase", new Color(0.12f, 0.12f, 0.13f), 0.3f);
             var pads = new System.Collections.Generic.List<BoostPad>
             {
-                BoostPadAt(go.transform, new Vector3(5f, 0f, 56f), 180f, padBase, padOn, padOff),    // south, down the pit
-                BoostPadAt(go.transform, new Vector3(-7f, 0f, -50f), 0f, padBase, padOn, padOff),    // north, up the pit (beside the gate exit)
-                BoostPadAt(go.transform, new Vector3(-60f, 0f, -28f), 0f, padBase, padOn, padOff),   // north up the west lane, into the jump
-                BoostPadAt(go.transform, new Vector3(54f, 0f, 28f), 180f, padBase, padOn, padOff),   // south down the east lane, into the jump
+                BoostPadAt(go.transform, new Vector3(0f, 0f, 19f), 180f, padBase, padOn, padOff),
+                BoostPadAt(go.transform, new Vector3(0f, 0f, -19f), 0f, padBase, padOn, padOff),
+                BoostPadAt(go.transform, new Vector3(19f, 0f, 0f), -90f, padBase, padOn, padOff),
+                BoostPadAt(go.transform, new Vector3(-19f, 0f, 0f), 90f, padBase, padOn, padOff),
             };
             objectives.pads = pads.ToArray();
         }
@@ -1574,114 +1627,6 @@ namespace CarArena.EditorTools
             var prefab = PrefabUtility.SaveAsPrefabAsset(root, Root + "/Prefabs/EmperorGift.prefab");
             Object.DestroyImmediate(root);
             return prefab.GetComponent<EmperorGift>();
-        }
-
-        static ParticleSystem FireParticles(string name, Transform parent, bool burst)
-        {
-            var go = Empty(name, parent, Vector3.zero, Quaternion.Euler(-90f, 0f, 0f));
-            var ps = go.AddComponent<ParticleSystem>();
-            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            var main = ps.main;
-            main.playOnAwake = false;
-            main.simulationSpace = ParticleSystemSimulationSpace.World;
-            main.startRotation = new ParticleSystem.MinMaxCurve(0f, Mathf.PI * 2f);
-            var emission = ps.emission;
-            var shape = ps.shape;
-            var color = ps.colorOverLifetime;
-            color.enabled = true;
-            var g = new Gradient();
-            if (burst)
-            {
-                main.loop = false;
-                main.duration = 0.5f;
-                main.startLifetime = new ParticleSystem.MinMaxCurve(0.5f, 1.2f);
-                main.startSpeed = new ParticleSystem.MinMaxCurve(6f, 15f);
-                main.startSize = new ParticleSystem.MinMaxCurve(0.8f, 2.2f);
-                main.gravityModifier = 0.4f;
-                main.maxParticles = 120;
-                emission.rateOverTime = 0f;
-                emission.SetBursts(new[] { new ParticleSystem.Burst(0f, 70) });
-                shape.shapeType = ParticleSystemShapeType.Hemisphere;
-                shape.radius = 0.8f;
-                g.SetKeys(new[] { new GradientColorKey(new Color(1f, 0.85f, 0.4f), 0f), new GradientColorKey(new Color(1f, 0.35f, 0.05f), 0.25f), new GradientColorKey(new Color(0.15f, 0.13f, 0.12f), 0.7f) },
-                    new[] { new GradientAlphaKey(1f, 0f), new GradientAlphaKey(0.8f, 0.5f), new GradientAlphaKey(0f, 1f) });
-            }
-            else
-            {
-                main.loop = true;
-                main.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.4f);
-                main.startSpeed = new ParticleSystem.MinMaxCurve(1.5f, 3.5f);
-                main.startSize = new ParticleSystem.MinMaxCurve(0.8f, 1.7f);
-                main.gravityModifier = -0.15f;
-                main.maxParticles = 400;
-                emission.rateOverTime = 90f;
-                shape.shapeType = ParticleSystemShapeType.Circle;
-                shape.radius = 3.6f;
-                var size = ps.sizeOverLifetime;
-                size.enabled = true;
-                size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 0.3f));
-                g.SetKeys(new[] { new GradientColorKey(new Color(1f, 0.8f, 0.3f), 0f), new GradientColorKey(new Color(1f, 0.3f, 0.05f), 0.4f), new GradientColorKey(new Color(0.2f, 0.18f, 0.16f), 1f) },
-                    new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.9f, 0.1f), new GradientAlphaKey(0f, 1f) });
-            }
-            color.color = g;
-            var renderer = go.GetComponent<ParticleSystemRenderer>();
-            renderer.sharedMaterial = GraphicsSettings.currentRenderPipeline != null
-                ? GraphicsSettings.currentRenderPipeline.defaultParticleMaterial : null;
-            renderer.shadowCastingMode = ShadowCastingMode.Off;
-            return ps;
-        }
-
-        static CrowdHazard HazardPrefab()
-        {
-            var warnMat = GlowMat("HazardWarning", new Color(1f, 0.1f, 0.05f, 0.35f), new Color(1.2f, 0.08f, 0.02f), true);
-            var barrelMat = GlowMat("HazardBarrel", new Color(0.45f, 0.18f, 0.08f), new Color(0.9f, 0.3f, 0.02f), false);
-            var root = new GameObject("CrowdHazard");
-
-            var projectile = Prim(PrimitiveType.Cylinder, "Barrel", root.transform, Vector3.zero, new Vector3(0.6f, 0.45f, 0.6f), barrelMat);
-            var trail = FireParticles("BarrelFlames", projectile.transform, false);
-            var tm = trail.main;
-            tm.playOnAwake = true;
-            tm.startSize = new ParticleSystem.MinMaxCurve(0.3f, 0.7f);
-            var ts = trail.shape;
-            ts.radius = 0.3f;
-            var te = trail.emission;
-            te.rateOverTime = 60f;
-
-            var ring = Prim(PrimitiveType.Cylinder, "WarningRing", root.transform, new Vector3(0f, 0.04f, 0f), new Vector3(14f, 0.005f, 14f), warnMat);
-            ring.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
-
-            var fire = FireParticles("Fire", root.transform, false);
-            var blast = FireParticles("Blast", root.transform, true);
-
-            var lightGo = Empty("Glow", root.transform, new Vector3(0f, 1.5f, 0f));
-            var light = lightGo.AddComponent<Light>();
-            light.type = LightType.Point;
-            light.range = 14f;
-            light.intensity = 0f;
-            light.color = new Color(1f, 0.5f, 0.15f);
-            light.shadows = LightShadows.None;
-
-            var audioSource = root.AddComponent<AudioSource>();
-            audioSource.playOnAwake = false;
-            audioSource.spatialBlend = 1f;
-            audioSource.minDistance = 10f;
-            audioSource.maxDistance = 180f;
-            audioSource.rolloffMode = AudioRolloffMode.Linear;
-            audioSource.pitch = 0.6f;
-            audioSource.volume = 1f;
-
-            var hazard = root.AddComponent<CrowdHazard>();
-            hazard.projectile = projectile.transform;
-            hazard.warningRing = ring.transform;
-            hazard.warningRenderer = ring.GetComponent<MeshRenderer>();
-            hazard.fire = fire;
-            hazard.blast = blast;
-            hazard.glow = light;
-            hazard.audioSource = audioSource;
-            hazard.blastClip = crashClips != null && crashClips.Length > 0 ? crashClips[0] : null;
-            var prefab = PrefabUtility.SaveAsPrefabAsset(root, Root + "/Prefabs/CrowdHazard.prefab");
-            Object.DestroyImmediate(root);
-            return prefab.GetComponent<CrowdHazard>();
         }
 
         static CampaignSettings CampaignAsset(GameObject[] enemyPrefabs)

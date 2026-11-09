@@ -41,7 +41,7 @@ namespace CarArena
         public float minPlayerDistance = 30f;
         [Tooltip("Optional: the stands' crowd cheers on big crashes and kills.")]
         public ArenaCrowd crowd;
-        [Tooltip("Side objectives (gifts, boost pads, crowd hazards). The AI reads them from here.")]
+        [Tooltip("Side objectives (gifts, boost pads). The AI reads them from here.")]
         public ArenaObjectives objectives;
         [Tooltip("Track layout (islands the AI routes around).")]
         public ArenaLayout layout;

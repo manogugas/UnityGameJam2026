@@ -5,15 +5,14 @@ using UnityEngine;
 namespace CarArena
 {
     /// <summary>
-    /// Side objectives that pull the fight apart, so cars spread out and meet again at speed:
+    /// Side objectives that feed the fight:
     ///  - Emperor's gifts: earned by fighting. After a big hit or a kill the emperor may toss a gold chest
     ///    near the brawl (rarely: one at a time, with a long cooldown). Any car can grab it: a small repair,
     ///    and the campaign pays the player a little cash.
     ///  - Boost pads: short pushes on the track straights, aimed at the crossing pit; rams hit harder for a
     ///    moment afterwards (BoostPad).
-    ///  - Crowd hazards: when cars stay bunched up, the crowd throws a burning barrel at the pile (CrowdHazard).
     /// Runs only while the ArenaDirector has a fight on; everything is cleared between matches.
-    /// The AI reads gifts, pads and danger zones from here.
+    /// The AI reads gifts and pads from here.
     /// </summary>
     public class ArenaObjectives : MonoBehaviour
     {
@@ -35,23 +34,10 @@ namespace CarArena
         public float giftRepair = 10f;
         [Tooltip("Gifts land this far (min, max) from the hit that earned them.")]
         public Vector2 giftDistance = new Vector2(12f, 22f);
-        [Tooltip("Gifts and hazards stay inside +- this many metres of the centre.")]
+        [Tooltip("Gifts stay inside +- this many metres of the centre.")]
         public float spawnHalfExtent = 52f;
         [Tooltip("Optional: keeps gifts off the islands.")]
         public ArenaLayout layout;
-
-        [Header("Crowd hazards")]
-        public CrowdHazard hazardPrefab;
-        [Tooltip("Cars within this distance of each other count as bunched up.")]
-        public float clusterRadius = 10f;
-        [Tooltip("Seconds three or more cars may stay bunched before the crowd throws something.")]
-        public float crowdClusterTime = 3.5f;
-        [Tooltip("Seconds two cars may grind against each other before the crowd throws something.")]
-        public float pairClusterTime = 7f;
-        public float hazardCooldown = 9f;
-        public int maxHazards = 2;
-        [Tooltip("Barrels are thrown from this far out (the front rows of the stands).")]
-        public float throwDistance = 84f;
 
         [Header("Boost pads")]
         public BoostPad[] pads;
@@ -60,16 +46,13 @@ namespace CarArena
         public event Action<CarHealth> GiftCollected;
 
         public IReadOnlyList<EmperorGift> Gifts => gifts;
-        public IReadOnlyList<CrowdHazard> Hazards => hazards;
         public IReadOnlyList<BoostPad> Pads => pads;
-        public float CrowdHeat => Mathf.Max(crowdTimer / Mathf.Max(0.1f, crowdClusterTime), pairTimer / Mathf.Max(0.1f, pairClusterTime));
 
         readonly List<EmperorGift> gifts = new List<EmperorGift>();
-        readonly List<CrowdHazard> hazards = new List<CrowdHazard>();
         readonly List<CarHealth> alive = new List<CarHealth>();
         readonly List<CarHealth> watched = new List<CarHealth>();
         bool running;
-        float runStart, lastGift = -100f, clusterCheck, crowdTimer, pairTimer, lastHazard = -100f;
+        float runStart, lastGift = -100f;
 
         void Update()
         {
@@ -83,27 +66,15 @@ namespace CarArena
             if (!running) return;
 
             gifts.RemoveAll(g => g == null);
-            hazards.RemoveAll(h => h == null);
             CollectAlive();
             WatchCombatants();
-            if (alive.Count < 2) return;
-
-            clusterCheck -= Time.deltaTime;
-            if (clusterCheck <= 0f)
-            {
-                clusterCheck = 0.25f;
-                CheckClusters(0.25f);
-            }
         }
 
-        /// <summary>Remove every gift and hazard (end of a match).</summary>
+        /// <summary>Remove every gift (end of a match).</summary>
         public void Clear()
         {
             foreach (var g in gifts) if (g != null) Destroy(g.gameObject);
-            foreach (var h in hazards) if (h != null) Destroy(h.gameObject);
             gifts.Clear();
-            hazards.Clear();
-            crowdTimer = pairTimer = 0f;
         }
 
         void CollectAlive()
@@ -228,73 +199,6 @@ namespace CarArena
                 best = p;
             }
             return best;
-        }
-
-        // ------------------------------------------------------------------ hazards
-
-        void CheckClusters(float dt)
-        {
-            int bestCount = 0;
-            Vector3 centre = Vector3.zero, vel = Vector3.zero;
-            foreach (var a in alive)
-            {
-                int n = 0;
-                Vector3 sum = Vector3.zero, vsum = Vector3.zero;
-                foreach (var b in alive)
-                {
-                    if (Flat(a.transform.position - b.transform.position).magnitude > clusterRadius) continue;
-                    n++;
-                    sum += b.transform.position;
-                    var rb = b.car != null ? b.car.Body : null;
-                    if (rb != null) vsum += rb.linearVelocity;
-                }
-                if (n > bestCount) { bestCount = n; centre = sum / n; vel = vsum / n; }
-            }
-
-            if (bestCount >= 3) crowdTimer += dt; else crowdTimer = Mathf.Max(0f, crowdTimer - dt * 2f);
-            if (bestCount >= 2) pairTimer += dt; else pairTimer = Mathf.Max(0f, pairTimer - dt * 2f);
-
-            bool fire = crowdTimer >= crowdClusterTime || pairTimer >= pairClusterTime;
-            if (!fire || Time.time - lastHazard < hazardCooldown || hazards.Count >= maxHazards || hazardPrefab == null) return;
-
-            crowdTimer = pairTimer = 0f;
-            lastHazard = Time.time;
-            // Aim a little ahead of where the pile is drifting.
-            Vector3 target = centre + Flat(vel) * (hazardPrefab.warningTime * 0.4f);
-            target.x = Mathf.Clamp(target.x, -spawnHalfExtent - 10f, spawnHalfExtent + 10f);
-            target.z = Mathf.Clamp(target.z, -spawnHalfExtent - 10f, spawnHalfExtent + 10f);
-            target.y = 0f;
-            if (Physics.Raycast(target + Vector3.up * 10f, Vector3.down, out var hit, 20f, ~0, QueryTriggerInteraction.Ignore))
-                target.y = hit.point.y;
-
-            Vector3 outward = Flat(target).sqrMagnitude > 1f ? Flat(target).normalized : Vector3.forward;
-            outward = Quaternion.Euler(0f, UnityEngine.Random.Range(-35f, 35f), 0f) * outward;
-            var hazard = Instantiate(hazardPrefab, target, Quaternion.identity, transform);
-            hazard.Owner = this;
-            hazard.LaunchFrom = outward * throwDistance + Vector3.up * 11f;
-            hazards.Add(hazard);
-            if (crowd != null) crowd.Cheer(0.5f);
-        }
-
-        public void HazardLanded(CrowdHazard hazard)
-        {
-            if (crowd != null) crowd.Cheer(0.9f);
-        }
-
-        /// <summary>Is this point inside (or within margin of) an incoming blast or a fire patch?</summary>
-        public bool InDanger(Vector3 point, float margin, out Vector3 centre)
-        {
-            foreach (var h in hazards)
-            {
-                if (h == null || h.DangerRadius <= 0f) continue;
-                if (Flat(point - h.transform.position).magnitude < h.DangerRadius + margin)
-                {
-                    centre = h.transform.position;
-                    return true;
-                }
-            }
-            centre = Vector3.zero;
-            return false;
         }
 
         static Vector3 Flat(Vector3 v) => new Vector3(v.x, 0f, v.z);

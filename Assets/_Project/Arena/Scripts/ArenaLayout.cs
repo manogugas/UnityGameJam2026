@@ -3,112 +3,122 @@ using UnityEngine;
 namespace CarArena
 {
     /// <summary>
-    /// The figure-8 track's islands (the two raised spinas the track loops around), as rectangles on the
-    /// ground plane. The AI has no navmesh: when an island is between a car and where it wants to go,
-    /// Route() hands back the island corner to head for first, so cars drive round the loops instead of
-    /// nosing into the wall. Gifts and reposition points use it to stay off the islands.
+    /// The figure-8 track's round infield islands, as circles on the ground plane. The AI has no navmesh:
+    /// when an island is between a car and where it wants to go, Route() hands back a point to steer for
+    /// that curves round it (a tangent to the island, or the next point along its edge when already
+    /// circling), so cars follow the loops instead of nosing into the wall. Gifts and reposition points
+    /// use it to stay off the islands.
     /// </summary>
     public class ArenaLayout : MonoBehaviour
     {
-        [Tooltip("Island footprints on the XZ plane: x/y = min corner (x, z), width/height = size (x, z).")]
-        public Rect[] islands;
+        [Tooltip("Island centres on the XZ plane (x, z).")]
+        public Vector2[] islandCentres;
+        [Tooltip("Island radii, one per centre.")]
+        public float[] islandRadii;
         [Tooltip("Clearance kept from island walls when testing whether a path is blocked.")]
         public float margin = 3f;
-        [Tooltip("How far outside an island's corner the detour point sits.")]
-        public float cornerOffset = 6f;
+        [Tooltip("Radius beyond the island edge that detours aim for.")]
+        public float detourOffset = 6f;
+        [Tooltip("When already circling an island, aim this many degrees further round it.")]
+        public float orbitLead = 40f;
+
+        int Count => islandCentres == null || islandRadii == null ? 0 : Mathf.Min(islandCentres.Length, islandRadii.Length);
 
         /// <summary>Where to aim to get from <paramref name="from"/> toward <paramref name="to"/> without hitting an island.</summary>
         public Vector3 Route(Vector3 from, Vector3 to)
         {
-            if (islands == null) return to;
             Vector2 a = new Vector2(from.x, from.z), b = new Vector2(to.x, to.z);
-            Rect blocking = default;
+            int blocking = -1;
             float nearest = float.MaxValue;
-            bool found = false;
-            foreach (var island in islands)
+            for (int i = 0; i < Count; i++)
             {
-                var r = Expand(island, margin);
-                if (r.Contains(a)) continue; // scraping its side: local avoidance handles that
-                if (!SegmentHits(a, b, r, out float tEnter)) continue;
-                if (tEnter < nearest) { nearest = tEnter; blocking = island; found = true; }
+                float r = islandRadii[i] + margin;
+                Vector2 c = islandCentres[i];
+                if ((a - c).sqrMagnitude < r * r) continue; // scraping its edge: local avoidance handles that
+                if (!SegmentHitsCircle(a, b, c, r, out float t)) continue;
+                if (t < nearest) { nearest = t; blocking = i; }
             }
-            if (!found) return to;
+            if (blocking < 0) return to;
 
-            var wall = Expand(blocking, margin);
-            var c = Expand(blocking, cornerOffset);
-            Vector2[] corners = { new Vector2(c.xMin, c.yMin), new Vector2(c.xMax, c.yMin), new Vector2(c.xMax, c.yMax), new Vector2(c.xMin, c.yMax) };
-            Vector2 best = b;
-            float bestCost = float.MaxValue;
-            foreach (var corner in corners)
+            Vector2 centre = islandCentres[blocking];
+            float rd = islandRadii[blocking] + detourOffset;
+            Vector2 rel = a - centre;
+            float d = rel.magnitude;
+            Vector2 u = rel / Mathf.Max(d, 0.01f);
+            Vector2 toB = b - centre;
+            float side = Mathf.Sign(u.x * toB.y - u.y * toB.x); // +1: goal is counter-clockwise from us
+            if (side == 0f) side = 1f;
+
+            Vector2 aim;
+            if (d < rd * 1.2f)
             {
-                if (SegmentHits(a, corner, Shrink(wall, 0.2f), out _)) continue; // can't see that corner from here
-                float cost = Vector2.Distance(a, corner) + Vector2.Distance(corner, b);
-                if (SegmentHits(corner, b, wall, out _)) cost += Mathf.Min(c.width, c.height); // still another corner to go
-                if (cost < bestCost) { bestCost = cost; best = corner; }
+                // Already alongside: keep circling toward the goal.
+                aim = centre + Rotate(u, side * orbitLead * Mathf.Deg2Rad) * rd;
             }
-            return new Vector3(best.x, to.y, best.y);
+            else
+            {
+                // Tangent to the detour circle on the goal's side.
+                float theta = Mathf.Acos(Mathf.Clamp(rd / d, -1f, 1f));
+                aim = centre + Rotate(u, side * theta) * rd;
+            }
+            return new Vector3(aim.x, to.y, aim.y);
         }
 
         public bool OnIsland(Vector3 p, float extra)
         {
-            if (islands == null) return false;
             var q = new Vector2(p.x, p.z);
-            foreach (var island in islands) if (Expand(island, extra).Contains(q)) return true;
+            for (int i = 0; i < Count; i++)
+                if ((q - islandCentres[i]).magnitude < islandRadii[i] + extra) return true;
             return false;
         }
 
-        /// <summary>Moves a point that lies on (or too near) an island out past its nearest edge.</summary>
+        /// <summary>Moves a point that lies on (or too near) an island out past its edge.</summary>
         public Vector3 PushOffIslands(Vector3 p, float extra)
         {
-            if (islands == null) return p;
-            foreach (var island in islands)
+            for (int i = 0; i < Count; i++)
             {
-                var r = Expand(island, extra);
-                if (!r.Contains(new Vector2(p.x, p.z))) continue;
-                float left = p.x - r.xMin, right = r.xMax - p.x, down = p.z - r.yMin, up = r.yMax - p.z;
-                float m = Mathf.Min(Mathf.Min(left, right), Mathf.Min(down, up));
-                if (m == left) p.x = r.xMin;
-                else if (m == right) p.x = r.xMax;
-                else if (m == down) p.z = r.yMin;
-                else p.z = r.yMax;
+                var q = new Vector2(p.x, p.z);
+                Vector2 rel = q - islandCentres[i];
+                float r = islandRadii[i] + extra;
+                if (rel.magnitude >= r) continue;
+                Vector2 dir = rel.sqrMagnitude > 0.01f ? rel.normalized : Vector2.right;
+                Vector2 o = islandCentres[i] + dir * r;
+                p.x = o.x;
+                p.z = o.y;
             }
             return p;
         }
 
-        static Rect Expand(Rect r, float d) => new Rect(r.xMin - d, r.yMin - d, r.width + 2f * d, r.height + 2f * d);
-        static Rect Shrink(Rect r, float d) => Expand(r, -d);
-
-        /// <summary>Does segment a-b cross rectangle r (Liang-Barsky)? tEnter = where it enters (0..1).</summary>
-        static bool SegmentHits(Vector2 a, Vector2 b, Rect r, out float tEnter)
+        static Vector2 Rotate(Vector2 v, float rad)
         {
-            float t0 = 0f, t1 = 1f;
-            Vector2 d = b - a;
-            tEnter = 0f;
-            if (!Clip(-d.x, a.x - r.xMin, ref t0, ref t1)) return false;
-            if (!Clip(d.x, r.xMax - a.x, ref t0, ref t1)) return false;
-            if (!Clip(-d.y, a.y - r.yMin, ref t0, ref t1)) return false;
-            if (!Clip(d.y, r.yMax - a.y, ref t0, ref t1)) return false;
-            tEnter = t0;
-            return true;
+            float c = Mathf.Cos(rad), s = Mathf.Sin(rad);
+            return new Vector2(v.x * c - v.y * s, v.x * s + v.y * c);
         }
 
-        static bool Clip(float p, float q, ref float t0, ref float t1)
+        /// <summary>Does segment a-b pass within r of c? t = parameter (0..1) of the closest approach.</summary>
+        static bool SegmentHitsCircle(Vector2 a, Vector2 b, Vector2 c, float r, out float t)
         {
-            if (Mathf.Abs(p) < 1e-6f) return q >= 0f;
-            float t = q / p;
-            if (p < 0f) { if (t > t1) return false; if (t > t0) t0 = t; }
-            else { if (t < t0) return false; if (t < t1) t1 = t; }
-            return true;
+            Vector2 d = b - a;
+            float len2 = d.sqrMagnitude;
+            t = len2 > 1e-6f ? Mathf.Clamp01(Vector2.Dot(c - a, d) / len2) : 0f;
+            return (a + d * t - c).sqrMagnitude < r * r;
         }
 
         void OnDrawGizmos()
         {
-            if (islands == null) return;
             Gizmos.color = new Color(1f, 0.6f, 0.1f, 0.8f);
-            foreach (var r in islands)
+            for (int i = 0; i < Count; i++)
             {
-                var e = Expand(r, margin);
-                Gizmos.DrawWireCube(new Vector3(e.center.x, 1f, e.center.y), new Vector3(e.width, 2f, e.height));
+                Vector3 c = new Vector3(islandCentres[i].x, 1f, islandCentres[i].y);
+                float r = islandRadii[i] + margin;
+                Vector3 prev = c + new Vector3(r, 0f, 0f);
+                for (int k = 1; k <= 48; k++)
+                {
+                    float ang = k / 48f * Mathf.PI * 2f;
+                    Vector3 p = c + new Vector3(Mathf.Cos(ang) * r, 0f, Mathf.Sin(ang) * r);
+                    Gizmos.DrawLine(prev, p);
+                    prev = p;
+                }
             }
         }
     }

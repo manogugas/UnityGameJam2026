@@ -13,13 +13,12 @@ namespace CarArena
     /// Targets: any living car (player or other enemies). Nearest wins, with a bias toward the player
     /// and toward whoever hit us last (revenge), and some stickiness so they don't flip-flop.
     /// The car the emperor marked is everyone's favourite target. Side objectives: bots sometimes break off
-    /// to grab an emperor's gift or take a boost pad that fires them at their target, and they drive out of
-    /// incoming barrels and fire patches.
+    /// to grab an emperor's gift or take a boost pad that fires them at their target.
     /// </summary>
     [RequireComponent(typeof(CarController))]
     public class AICarDriver : MonoBehaviour
     {
-        public enum State { Hunt, Charge, Push, BackOff, Reposition, Unstuck, Idle, Wait, Entering, Objective, Evade }
+        public enum State { Hunt, Charge, Push, BackOff, Reposition, Unstuck, Idle, Wait, Entering, Objective }
 
         public DriverArchetype archetype = DriverArchetype.Rammer;
         public CarController target;
@@ -85,7 +84,6 @@ namespace CarArena
         CarHealth lastAttacker;
         float lastAttackedTime = -100f, retargetTimer;
         Transform objective;
-        Vector3 evadeFrom;
         ArenaObjectives Objectives => director != null ? director.objectives : null;
         ArenaLayout Layout => director != null ? director.layout : null;
 
@@ -158,7 +156,7 @@ namespace CarArena
             if (director == null) return;
             bool targetGone = targetHealth == null || targetHealth.IsDead;
             bool busy = state == State.Charge || state == State.Push || state == State.BackOff
-                        || state == State.Wait || state == State.Entering || state == State.Objective || state == State.Evade;
+                        || state == State.Wait || state == State.Entering || state == State.Objective;
             if (busy && !targetGone) return;
 
             CarHealth best = null;
@@ -188,7 +186,7 @@ namespace CarArena
         void ConsiderObjective()
         {
             var obj = Objectives;
-            if (obj == null || state == State.Objective || state == State.Evade) return;
+            if (obj == null || state == State.Objective) return;
             if (state != State.Hunt && state != State.Reposition && state != State.Idle) return;
             Vector3 myPos = rb.position;
             float targetDist = target != null ? Flat(target.Body.position - myPos).magnitude : float.MaxValue;
@@ -257,14 +255,6 @@ namespace CarArena
             bool reverse = false;
             bool wantContact = false;
 
-            // Drive out of incoming barrels and fire patches (unless we're already reversing out of something).
-            var objs = Objectives;
-            if (objs != null && state != State.Entering && state != State.BackOff && state != State.Unstuck
-                && objs.InDanger(myPos, 3f, out Vector3 danger))
-            {
-                if (state != State.Evade) { evadeFrom = danger; Enter(State.Evade); }
-            }
-
             switch (state)
             {
                 case State.Hunt:
@@ -322,16 +312,6 @@ namespace CarArena
                     throttle = 1f;
                     if (Flat(objective.position - myPos).magnitude < 2f) { objective = null; Enter(target != null ? State.Hunt : State.Idle); }
                     break;
-
-                case State.Evade:
-                {
-                    Vector3 away = Flat(myPos - evadeFrom);
-                    if (away.sqrMagnitude < 0.5f) away = transform.forward;
-                    aim = myPos + away.normalized * 20f;
-                    throttle = 1f;
-                    if (objs == null || !objs.InDanger(myPos, 5f, out _) || stateTime > 4f) Enter(target != null ? State.Hunt : State.Idle);
-                    break;
-                }
 
                 case State.Idle:
                     aim = Vector3.zero;
