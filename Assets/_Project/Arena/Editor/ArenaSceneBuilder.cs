@@ -1,3 +1,4 @@
+using System.Linq;
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -1136,6 +1137,173 @@ namespace CarArena.EditorTools
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
 
+            var vis = player ? BuildRacerBody(t, rb) : BuildGreyboxBody(t, rb);
+            var bodyRoot = vis.bodyRoot;
+
+            // ---- Wheels
+            var wheels = new CarWheel[4];
+            string[] names = { "FL", "FR", "RL", "RR" };
+            for (int i = 0; i < 4; i++)
+            {
+                var mount = Empty(names[i], t, vis.wheelMounts[i]);
+                var w = mount.AddComponent<CarWheel>();
+                w.axle = i < 2 ? CarWheel.Axle.Front : CarWheel.Axle.Rear;
+                var visual = Empty("Visual", mount.transform, Vector3.down * w.restLength);
+                if (vis.wheelMeshes != null)
+                {
+                    var wm = vis.wheelMeshes[i];
+                    wm.SetParent(visual.transform, false);
+                    wm.localPosition = Vector3.zero;
+                    wm.localRotation = Quaternion.identity;
+                }
+                else
+                {
+                    Prim(PrimitiveType.Cylinder, "Tyre", visual.transform, Vector3.zero, new Vector3(0.68f, 0.12f, 0.68f), mTyre, false, Quaternion.Euler(0f, 0f, 90f));
+                    Prim(PrimitiveType.Cube, "Hubcap", visual.transform, new Vector3(0.125f * Mathf.Sign(vis.wheelMounts[i].x), 0f, 0f), new Vector3(0.01f, 0.3f, 0.08f), mGauge);
+                }
+                w.visual = visual.transform;
+                wheels[i] = w;
+            }
+
+            // ---- Driver head / camera
+            GameObject head = null;
+            if (player)
+            {
+                // The driver's view is a Cinemachine camera driven by CarCamera moving this transform;
+                // the scene's main camera (CinemachineBrain) renders it and blends to/from the intro shots.
+                head = Empty("DriverHead", t, vis.headPos);
+                var vcam = head.AddComponent<CinemachineCamera>();
+                vcam.name = "CM Driver";
+                var lens = LensSettings.Default;
+                lens.FieldOfView = 70f;
+                lens.NearClipPlane = 0.03f;
+                lens.FarClipPlane = 600f;
+                vcam.Lens = lens;
+                vcam.Priority.Value = 10;
+                var listener = head.AddComponent<CinemachineImpulseListener>();
+                listener.Gain = 0.6f;
+                listener.Use2DDistance = true;
+            }
+
+            // ---- Components
+            var controller = root.AddComponent<CarController>();
+            controller.input = input;
+            controller.wheels = wheels;
+            controller.steeringWheel = vis.spin;
+            controller.defaultSurface = defaultSurface;
+
+            var damage = root.AddComponent<CarDamage>();
+            damage.input = input;
+            damage.deformables = vis.deformables.ToArray();
+
+            if (player)
+            {
+                var gauges = vis.dash.gameObject.AddComponent<DashGauges>();
+                gauges.car = controller;
+                gauges.speedNeedle = vis.speedNeedle;
+                gauges.rpmNeedle = vis.rpmNeedle;
+                gauges.maxSpeedKmh = 200f;
+                gauges.maxRpm = 8000f;
+            }
+            damage.parts = vis.parts.ToArray();
+            damage.hood = vis.hood;
+            damage.hoodLatch = vis.hoodLatch;
+            if (player) damage.topHeight = vis.topHeight;
+
+            var interiorDamage = root.AddComponent<InteriorDamage>();
+            interiorDamage.damage = damage;
+            interiorDamage.carBody = rb;
+            interiorDamage.windscreen = vis.wsCracks;
+            interiorDamage.dashCracks = vis.dashCracks;
+            interiorDamage.dashboard = vis.dash;
+            interiorDamage.gloveboxHinge = vis.glove;
+            interiorDamage.sunVisorHinge = vis.visor;
+
+            if (vis.racer) BuildRacerNumberPlates(root, vis); else BuildNumberPlates(root, bodyRoot);
+
+            var health = root.AddComponent<CarHealth>();
+            health.car = controller;
+            health.damage = damage;
+            health.isPlayer = player;
+            health.incomingDamageScale = player ? 0.8f : 1f;
+            health.displayName = player ? "You" : name;
+            health.smoke = EngineSmoke(t, vis.smokePos);
+
+            root.AddComponent<AudioSource>();
+            var audio = root.AddComponent<CarAudio>();
+            audio.car = controller;
+            audio.damage = damage;
+            audio.spatial = !player;
+            audio.crashClips = crashClips;
+
+            var impulse = root.AddComponent<CinemachineImpulseSource>();
+            impulse.ImpulseDefinition.ImpulseShape = CinemachineImpulseDefinition.ImpulseShapes.Bump;
+            impulse.ImpulseDefinition.ImpulseType = CinemachineImpulseDefinition.ImpulseTypes.Dissipating;
+            impulse.ImpulseDefinition.ImpulseDuration = 0.3f;
+            impulse.ImpulseDefinition.DissipationDistance = 70f;
+            root.AddComponent<CrashImpulse>().damage = damage;
+
+            if (player)
+            {
+                var camCtl = head.AddComponent<CarCamera>();
+                camCtl.car = controller;
+                camCtl.input = input;
+                camCtl.damage = damage;
+
+                var hud = root.AddComponent<CarHud>();
+                hud.car = controller;
+                hud.damage = damage;
+                hud.health = health;
+
+                root.AddComponent<CombatHud>().player = health;
+                BuildUpgradeVisuals(root, vis, controller, health);
+
+                // Health gauge in the middle of the dashboard, right of the steering wheel.
+                var hg = Empty("HealthGauge", vis.dash, vis.healthGaugePos);
+                Prim(PrimitiveType.Cube, "Frame", hg.transform, new Vector3(0f, 0f, 0.001f), new Vector3(0.25f, 0.05f, 0.004f), mTrim);
+                var pivot = Empty("FillPivot", hg.transform, new Vector3(-0.11f, 0f, -0.002f));
+                var fill = Prim(PrimitiveType.Cube, "Fill", pivot.transform, new Vector3(0.11f, 0f, 0f), new Vector3(0.22f, 0.03f, 0.003f), mHealthFill);
+                Label(hg.transform, "HULL", new Vector3(-0.085f, 0.04f, -0.002f), 0.1f);
+                var readout = Label(hg.transform, "100", new Vector3(0.09f, 0.04f, -0.002f), 0.13f);
+                var bar = hg.AddComponent<DashHealthBar>();
+                bar.health = health;
+                bar.fillPivot = pivot.transform;
+                bar.fillRenderer = fill.GetComponent<MeshRenderer>();
+                bar.readout = readout;
+
+                // Warning lamps in the gap between the two dials, and the TC OFF button on the dash side.
+                var lamps = Empty("WarningLamps", vis.dash, vis.lampsPos);
+                var tcLamp = Prim(PrimitiveType.Cube, "TCLamp", lamps.transform, new Vector3(0f, 0.035f, 0f), new Vector3(0.028f, 0.026f, 0.002f), mWarnLamp);
+                var tcOffLamp = Prim(PrimitiveType.Cube, "TCOffLamp", lamps.transform, new Vector3(0f, -0.002f, 0f), new Vector3(0.028f, 0.026f, 0.002f), mWarnLamp);
+                LabelDark(lamps.transform, "TC", new Vector3(0f, 0.035f, -0.0015f), 0.075f);
+                LabelDark(lamps.transform, "TC" + "\n" + "OFF", new Vector3(0f, -0.002f, -0.0015f), 0.05f);
+
+                var btnRoot = Empty("TCOffButton", vis.dash, vis.tcButtonPos);
+                Prim(PrimitiveType.Cube, "Bezel", btnRoot.transform, new Vector3(0f, 0f, -0.002f), new Vector3(0.042f, 0.032f, 0.004f), mInterior);
+                var btn = Empty("Button", btnRoot.transform, new Vector3(0f, 0f, -0.008f));
+                Prim(PrimitiveType.Cube, "Cap", btn.transform, Vector3.zero, new Vector3(0.034f, 0.024f, 0.01f), mTrim);
+                var led = Prim(PrimitiveType.Cube, "Led", btn.transform, new Vector3(0f, 0.0075f, -0.0052f), new Vector3(0.01f, 0.003f, 0.001f), mWarnLamp);
+                Label(btn.transform, "TC OFF", new Vector3(0f, -0.003f, -0.0056f), 0.045f);
+                Label(btnRoot.transform, "ASSISTS (B)", new Vector3(0f, 0.026f, -0.003f), 0.05f);
+
+                var warn = lamps.AddComponent<DashWarningLights>();
+                warn.car = controller;
+                warn.tcLamp = tcLamp.GetComponent<MeshRenderer>();
+                warn.tcOffLamp = tcOffLamp.GetComponent<MeshRenderer>();
+                warn.button = btn.transform;
+                warn.buttonLed = led.GetComponent<MeshRenderer>();
+            }
+            else
+            {
+                root.AddComponent<AICarDriver>();
+            }
+
+            return root;
+        }
+
+        /// <summary>Greybox body + interior (enemy cars).</summary>
+        static CarVisuals BuildGreyboxBody(Transform t, Rigidbody rb)
+        {
             // Colliders
             var colLower = Empty("ColliderLower", t, Vector3.zero).AddComponent<BoxCollider>();
             colLower.size = new Vector3(1.8f, 0.6f, 4.3f);
@@ -1296,157 +1464,20 @@ namespace CarArena.EditorTools
             Prim(PrimitiveType.Cube, "Mattress", interior, new Vector3(0f, 0.4f, -1.6f), new Vector3(1.4f, 0.14f, 0.85f), mBed, false, Quaternion.Euler(0f, 3f, 0f));
             Prim(PrimitiveType.Cube, "Pillow", interior, new Vector3(-0.45f, 0.5f, -1.65f), new Vector3(0.4f, 0.1f, 0.3f), mGauge, false, Quaternion.Euler(0f, -8f, 4f));
 
-            var rearView = RearViewMirror(interior);
+            var rearView = RearViewMirror(interior, new Vector3(0f, 0.97f, 0.08f), new Vector3(0.18f, 0.6f, 0.3f));
 
-            // ---- Wheels
-            var wheels = new CarWheel[4];
-            Vector3[] mounts = { new Vector3(-0.8f, 0f, 1.35f), new Vector3(0.8f, 0f, 1.35f), new Vector3(-0.8f, 0f, -1.35f), new Vector3(0.8f, 0f, -1.35f) };
-            string[] names = { "FL", "FR", "RL", "RR" };
-            for (int i = 0; i < 4; i++)
+            return new CarVisuals
             {
-                var mount = Empty(names[i], t, mounts[i]);
-                var w = mount.AddComponent<CarWheel>();
-                w.axle = i < 2 ? CarWheel.Axle.Front : CarWheel.Axle.Rear;
-                var vis = Empty("Visual", mount.transform, Vector3.down * w.restLength);
-                Prim(PrimitiveType.Cylinder, "Tyre", vis.transform, Vector3.zero, new Vector3(0.68f, 0.12f, 0.68f), mTyre, false, Quaternion.Euler(0f, 0f, 90f));
-                Prim(PrimitiveType.Cube, "Hubcap", vis.transform, new Vector3(0.125f * Mathf.Sign(mounts[i].x), 0f, 0f), new Vector3(0.01f, 0.3f, 0.08f), mGauge);
-                w.visual = vis.transform;
-                wheels[i] = w;
-            }
-
-            // ---- Driver head / camera
-            GameObject head = null;
-            if (player)
-            {
-                // The driver's view is a Cinemachine camera driven by CarCamera moving this transform;
-                // the scene's main camera (CinemachineBrain) renders it and blends to/from the intro shots.
-                head = Empty("DriverHead", t, new Vector3(-0.38f, 0.82f, -0.5f));
-                var vcam = head.AddComponent<CinemachineCamera>();
-                vcam.name = "CM Driver";
-                var lens = LensSettings.Default;
-                lens.FieldOfView = 70f;
-                lens.NearClipPlane = 0.03f;
-                lens.FarClipPlane = 600f;
-                vcam.Lens = lens;
-                vcam.Priority.Value = 10;
-                var listener = head.AddComponent<CinemachineImpulseListener>();
-                listener.Gain = 0.6f;
-                listener.Use2DDistance = true;
-            }
-
-            // ---- Components
-            var controller = root.AddComponent<CarController>();
-            controller.input = input;
-            controller.wheels = wheels;
-            controller.steeringWheel = spin.transform;
-            controller.defaultSurface = defaultSurface;
-
-            var damage = root.AddComponent<CarDamage>();
-            damage.input = input;
-            damage.deformables = new[] { frontBody, rearBody, hood, roof, doorL, doorR };
-
-            if (player)
-            {
-                var gauges = dash.AddComponent<DashGauges>();
-                gauges.car = controller;
-                gauges.speedNeedle = speedNeedle;
-                gauges.rpmNeedle = rpmNeedle;
-                gauges.maxSpeedKmh = 200f;
-                gauges.maxRpm = 8000f;
-            }
-            damage.parts = new[] { bumperF, bumperR, mirrorL, mirrorR, rearView };
-            damage.hood = hood;
-            damage.hoodLatch = hoodLatch;
-
-            var interiorDamage = root.AddComponent<InteriorDamage>();
-            interiorDamage.damage = damage;
-            interiorDamage.carBody = rb;
-            interiorDamage.windscreen = wsCracks;
-            interiorDamage.dashCracks = dashCracks;
-            interiorDamage.dashboard = dash.transform;
-            interiorDamage.gloveboxHinge = glove.transform;
-            interiorDamage.sunVisorHinge = visor.transform;
-
-            BuildNumberPlates(root, bodyRoot);
-
-            var health = root.AddComponent<CarHealth>();
-            health.car = controller;
-            health.damage = damage;
-            health.isPlayer = player;
-            health.incomingDamageScale = player ? 0.8f : 1f;
-            health.displayName = player ? "You" : name;
-            health.smoke = EngineSmoke(t);
-
-            root.AddComponent<AudioSource>();
-            var audio = root.AddComponent<CarAudio>();
-            audio.car = controller;
-            audio.damage = damage;
-            audio.spatial = !player;
-            audio.crashClips = crashClips;
-
-            var impulse = root.AddComponent<CinemachineImpulseSource>();
-            impulse.ImpulseDefinition.ImpulseShape = CinemachineImpulseDefinition.ImpulseShapes.Bump;
-            impulse.ImpulseDefinition.ImpulseType = CinemachineImpulseDefinition.ImpulseTypes.Dissipating;
-            impulse.ImpulseDefinition.ImpulseDuration = 0.3f;
-            impulse.ImpulseDefinition.DissipationDistance = 70f;
-            root.AddComponent<CrashImpulse>().damage = damage;
-
-            if (player)
-            {
-                var camCtl = head.AddComponent<CarCamera>();
-                camCtl.car = controller;
-                camCtl.input = input;
-                camCtl.damage = damage;
-
-                var hud = root.AddComponent<CarHud>();
-                hud.car = controller;
-                hud.damage = damage;
-                hud.health = health;
-
-                root.AddComponent<CombatHud>().player = health;
-                BuildUpgradeVisuals(root, bodyRoot, hoodHinge.transform, controller, health);
-
-                // Health gauge in the middle of the dashboard, right of the steering wheel.
-                var hg = Empty("HealthGauge", dash.transform, new Vector3(0.03f, 0.045f, -0.2285f));
-                Prim(PrimitiveType.Cube, "Frame", hg.transform, new Vector3(0f, 0f, 0.001f), new Vector3(0.25f, 0.05f, 0.004f), mTrim);
-                var pivot = Empty("FillPivot", hg.transform, new Vector3(-0.11f, 0f, -0.002f));
-                var fill = Prim(PrimitiveType.Cube, "Fill", pivot.transform, new Vector3(0.11f, 0f, 0f), new Vector3(0.22f, 0.03f, 0.003f), mHealthFill);
-                Label(hg.transform, "HULL", new Vector3(-0.085f, 0.04f, -0.002f), 0.1f);
-                var readout = Label(hg.transform, "100", new Vector3(0.09f, 0.04f, -0.002f), 0.13f);
-                var bar = hg.AddComponent<DashHealthBar>();
-                bar.health = health;
-                bar.fillPivot = pivot.transform;
-                bar.fillRenderer = fill.GetComponent<MeshRenderer>();
-                bar.readout = readout;
-
-                // Warning lamps in the gap between the two dials, and the TC OFF button on the dash side.
-                var lamps = Empty("WarningLamps", dash.transform, new Vector3(-0.38f, 0.04f, -0.2305f));
-                var tcLamp = Prim(PrimitiveType.Cube, "TCLamp", lamps.transform, new Vector3(0f, 0.035f, 0f), new Vector3(0.028f, 0.026f, 0.002f), mWarnLamp);
-                var tcOffLamp = Prim(PrimitiveType.Cube, "TCOffLamp", lamps.transform, new Vector3(0f, -0.002f, 0f), new Vector3(0.028f, 0.026f, 0.002f), mWarnLamp);
-                LabelDark(lamps.transform, "TC", new Vector3(0f, 0.035f, -0.0015f), 0.075f);
-                LabelDark(lamps.transform, "TC" + "\n" + "OFF", new Vector3(0f, -0.002f, -0.0015f), 0.05f);
-
-                var btnRoot = Empty("TCOffButton", dash.transform, new Vector3(-0.66f, 0.0f, -0.226f));
-                Prim(PrimitiveType.Cube, "Bezel", btnRoot.transform, new Vector3(0f, 0f, -0.002f), new Vector3(0.042f, 0.032f, 0.004f), mInterior);
-                var btn = Empty("Button", btnRoot.transform, new Vector3(0f, 0f, -0.008f));
-                Prim(PrimitiveType.Cube, "Cap", btn.transform, Vector3.zero, new Vector3(0.034f, 0.024f, 0.01f), mTrim);
-                var led = Prim(PrimitiveType.Cube, "Led", btn.transform, new Vector3(0f, 0.0075f, -0.0052f), new Vector3(0.01f, 0.003f, 0.001f), mWarnLamp);
-                Label(btn.transform, "TC OFF", new Vector3(0f, -0.003f, -0.0056f), 0.045f);
-                Label(btnRoot.transform, "ASSISTS (B)", new Vector3(0f, 0.026f, -0.003f), 0.05f);
-
-                var warn = lamps.AddComponent<DashWarningLights>();
-                warn.car = controller;
-                warn.tcLamp = tcLamp.GetComponent<MeshRenderer>();
-                warn.tcOffLamp = tcOffLamp.GetComponent<MeshRenderer>();
-                warn.button = btn.transform;
-                warn.buttonLed = led.GetComponent<MeshRenderer>();
-            }
-            else
-            {
-                root.AddComponent<AICarDriver>();
-            }
-
-            return root;
+                bodyRoot = bodyRoot, interior = interior, dash = dash.transform, glove = glove.transform, visor = visor.transform,
+                spin = spin.transform, hoodHinge = hoodHinge.transform, hoodLatch = hoodLatch, hood = hood,
+                deformables = new System.Collections.Generic.List<DeformableMesh> { frontBody, rearBody, hood, roof, doorL, doorR },
+                parts = new System.Collections.Generic.List<DetachablePart> { bumperF, bumperR, mirrorL, mirrorR, rearView },
+                wsCracks = wsCracks, dashCracks = dashCracks, speedNeedle = speedNeedle, rpmNeedle = rpmNeedle,
+                headPos = new Vector3(-0.38f, 0.82f, -0.5f),
+                wheelMounts = new[] { new Vector3(-0.8f, 0f, 1.35f), new Vector3(0.8f, 0f, 1.35f), new Vector3(-0.8f, 0f, -1.35f), new Vector3(0.8f, 0f, -1.35f) },
+                healthGaugePos = new Vector3(0.03f, 0.045f, -0.2285f), lampsPos = new Vector3(-0.38f, 0.04f, -0.2305f),
+                tcButtonPos = new Vector3(-0.66f, 0.0f, -0.226f), smokePos = new Vector3(0f, 0.42f, 1.6f),
+            };
         }
 
         /// <summary>Analog gauge on the dash face (local -Z faces the driver). Returns the needle pivot.</summary>
@@ -1519,9 +1550,9 @@ namespace CarArena.EditorTools
             return tmp;
         }
 
-        static ParticleSystem EngineSmoke(Transform car)
+        static ParticleSystem EngineSmoke(Transform car, Vector3 pos)
         {
-            var go = Empty("EngineSmoke", car, new Vector3(0f, 0.42f, 1.6f), Quaternion.Euler(-80f, 0f, 0f));
+            var go = Empty("EngineSmoke", car, pos, Quaternion.Euler(-80f, 0f, 0f));
             var ps = go.AddComponent<ParticleSystem>();
             ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             var main = ps.main;
@@ -1610,54 +1641,220 @@ namespace CarArena.EditorTools
             return tmp;
         }
 
-        /// <summary>Bolt-on parts that appear with upgrade levels (player car).</summary>
-        static void BuildUpgradeVisuals(GameObject root, Transform bodyRoot, Transform hoodHinge, CarController controller, CarHealth health)
+        /// <summary>Everything the car builder needs from a body style (greybox or Racer 01).</summary>
+        class CarVisuals
         {
-            var group = Empty("Upgrades", bodyRoot, Vector3.zero).transform;
+            public bool racer;
+            public Transform bodyRoot, interior, dash, glove, visor, spin, hoodHinge;
+            public HoodLatch hoodLatch;
+            public DeformableMesh hood;
+            public System.Collections.Generic.List<DeformableMesh> deformables = new System.Collections.Generic.List<DeformableMesh>();
+            public System.Collections.Generic.List<DetachablePart> parts = new System.Collections.Generic.List<DetachablePart>();
+            public CrackDecals wsCracks, dashCracks;
+            public Transform speedNeedle, rpmNeedle;
+            public Vector3 headPos;
+            public Vector3[] wheelMounts;
+            public Transform[] wheelMeshes;
+            public Vector3 healthGaugePos, lampsPos, tcButtonPos, smokePos;
+            public float topHeight = 0.85f;
+            // Racer only
+            public Transform doorL, doorR, roof, hoodPanel, scoop;
+        }
 
-            // Armour: L1 door plates, L2 hood plate + grille guard, L3 roof cage
-            var a1 = Empty("Armour1", group, Vector3.zero).transform;
+        // Racer 01 model frame (ground at y = 0) -> car frame (wheel mounts at y = 0, wheels sag to about -0.31).
+        static readonly Vector3 RacerOffset = new Vector3(0f, -0.64f, 0f);
+        static Vector3 RM(float x, float y, float z) => new Vector3(x, y, z) + RacerOffset;
+        static Vector3 RM(Vector3 p) => p + RacerOffset;
+
+        /// <summary>Player car body: the multi-part Racer 01 model with modelled interior, engine bay and underside.</summary>
+        static CarVisuals BuildRacerBody(Transform t, Rigidbody rb)
+        {
+            var vis = new CarVisuals { racer = true };
+
+            // Hull colliders; the breakable panels add their own boxes on top.
+            var colLower = Empty("ColliderLower", t, RM(0f, 0.58f, 0f)).AddComponent<BoxCollider>();
+            colLower.size = new Vector3(1.72f, 0.72f, 4.08f);
+            colLower.sharedMaterial = carPhysMat;
+            var colCabin = Empty("ColliderCabin", t, RM(0f, 1.11f, -0.43f)).AddComponent<BoxCollider>();
+            colCabin.size = new Vector3(1.4f, 0.36f, 1.9f);
+            colCabin.sharedMaterial = carPhysMat;
+
+            // Windows down: the garage arm passes the tablet in through the passenger window.
+            var r = Racer01Body.Spawn(t, RacerOffset, carPhysMat, true, "HoodScoop");
+            var body = r.body.transform;
+            vis.bodyRoot = body;
+            vis.parts.AddRange(r.detachables);
+
+            // Hood on a latch hinge at its rear edge (the Hood pivot is already there).
+            var hoodT = r["Hood"];
+            var hinge = Empty("HoodHinge", body, hoodT.localPosition);
+            hoodT.SetParent(hinge.transform, true);
+            var latch = hinge.AddComponent<HoodLatch>();
+            latch.carBody = rb;
+            vis.hoodHinge = hinge.transform;
+            vis.hoodLatch = latch;
+            vis.hoodPanel = hoodT;
+            vis.scoop = r["HoodScoop"];
+            if (vis.scoop != null) vis.scoop.SetParent(hoodT, true);
+
+            foreach (var n in new[] { "Hood", "Roof", "DoorL", "DoorR", "FenderL", "FenderR", "QuarterL", "QuarterR", "TrunkLid" })
+            {
+                var d = r[n].gameObject.AddComponent<DeformableMesh>();
+                d.maxDeform = n == "Roof" ? 0.22f : 0.32f;
+                vis.deformables.Add(d);
+                if (n == "Hood") vis.hood = d;
+            }
+            vis.doorL = r["DoorL"];
+            vis.doorR = r["DoorR"];
+            vis.roof = r["Roof"];
+
+            // Windscreen cracks on a plane through the glass (local XY = glass, -Z toward the driver).
+            Vector3 wsB = Racer01Body.WindscreenBottom, wsT = Racer01Body.WindscreenTop, slant = wsT - wsB;
+            Vector3 wsNormal = Vector3.Cross(slant.normalized, Vector3.left).normalized;
+            var wsPlane = Empty("WindscreenCracks", body, (wsB + wsT) * 0.5f, Quaternion.LookRotation(wsNormal, slant.normalized));
+            vis.wsCracks = wsPlane.AddComponent<CrackDecals>();
+            vis.wsCracks.crackMaterial = mCrack;
+            vis.wsCracks.stripMesh = unitCube;
+            vis.wsCracks.halfSize = new Vector2(0.68f, slant.magnitude * 0.45f);
+            vis.wsCracks.surfaceOffset = -0.012f;
+
+            // ---- Cockpit: modelled dashboard, functional bits added on its faces (local -Z faces the driver).
+            vis.interior = Empty("Interior", t, Vector3.zero).transform;
+            var dash = r["Dashboard"];
+            vis.dash = dash;
+            vis.glove = r["GloveboxLid"]; // pivot is the hinge at its bottom edge
+            var dashTop = Empty("DashTop", dash, new Vector3(0f, 0.101f, 0f), Quaternion.Euler(-90f, 0f, 0f));
+            vis.dashCracks = dashTop.AddComponent<CrackDecals>();
+            vis.dashCracks.crackMaterial = mCrack;
+            vis.dashCracks.stripMesh = unitCube;
+            vis.dashCracks.halfSize = new Vector2(0.72f, 0.14f);
+            vis.dashCracks.surfaceOffset = 0.003f;
+            vis.dashCracks.maxCracks = 6;
+            vis.dashCracks.stripWidth = 0.006f;
+            // Binnacle face at local z = -0.21: speedometer left, tachometer right, warning lamps between.
+            vis.speedNeedle = Gauge("Speedometer", dash, new Vector3(-0.475f, 0.01f, -0.214f), 200f, 20f, 10f, 1f, 2, "km/h", -1f);
+            vis.rpmNeedle = Gauge("Tachometer", dash, new Vector3(-0.285f, 0.01f, -0.214f), 8000f, 1000f, 500f, 1000f, 1, "x1000 rpm", 6500f);
+            vis.lampsPos = new Vector3(-0.38f, 0.01f, -0.216f);
+            vis.healthGaugePos = new Vector3(0f, -0.03f, -0.202f); // centre stack face
+            vis.tcButtonPos = new Vector3(-0.70f, -0.04f, -0.172f); // dash face left of the binnacle
+
+            var visor = Empty("SunVisorHinge", vis.interior, RM(-0.38f, 1.222f, 0.0f));
+            Prim(PrimitiveType.Cube, "SunVisor", visor.transform, new Vector3(0f, -0.012f, -0.075f), new Vector3(0.32f, 0.02f, 0.13f), mSeat);
+            vis.visor = visor.transform;
+
+            var column = Empty("SteeringColumn", vis.interior, RM(Racer01Body.SteeringHub), Quaternion.LookRotation(Racer01Body.ColumnDir));
+            Prim(PrimitiveType.Cylinder, "Column", column.transform, new Vector3(0f, 0f, 0.19f), new Vector3(0.05f, 0.19f, 0.05f), mTrim, false, Quaternion.Euler(90f, 0f, 0f));
+            var spin = Empty("SteeringWheel", column.transform, Vector3.zero).transform;
+            var wheelMesh = r["SteeringWheel"];
+            wheelMesh.SetParent(spin, false);
+            wheelMesh.localPosition = Vector3.zero;
+            wheelMesh.localRotation = Quaternion.identity;
+            vis.spin = spin;
+
+            vis.parts.Add(RearViewMirror(vis.interior, RM(0f, 1.19f, 0.0f), RM(0.18f, 0.86f, 0.45f)));
+
+            vis.headPos = RM(Racer01Body.DriverEye);
+            vis.wheelMounts = new[]
+            {
+                new Vector3(-Racer01Body.WheelX, 0f, Racer01Body.WheelFrontZ), new Vector3(Racer01Body.WheelX, 0f, Racer01Body.WheelFrontZ),
+                new Vector3(-Racer01Body.WheelX, 0f, Racer01Body.WheelRearZ), new Vector3(Racer01Body.WheelX, 0f, Racer01Body.WheelRearZ),
+            };
+            vis.wheelMeshes = Racer01Body.WheelNames.Select(n => r[n]).ToArray();
+            vis.smokePos = RM(0f, 0.84f, 1.5f);
+            vis.topHeight = RM(0f, 1.2f, 0f).y;
+            return vis;
+        }
+
+        /// <summary>Racing number on the Racer: roof roundel plus one on each door (they leave with the doors).</summary>
+        static void BuildRacerNumberPlates(GameObject root, CarVisuals vis)
+        {
+            var body = vis.bodyRoot;
+            var group = Empty("NumberPlates", body, Vector3.zero).transform;
+            var texts = new System.Collections.Generic.List<TextMeshPro>();
+            var rims = new System.Collections.Generic.List<GameObject>();
+
+            Prim(PrimitiveType.Cylinder, "RoofRoundel", group, new Vector3(0f, 1.303f, -0.43f), new Vector3(0.5f, 0.003f, 0.5f), mRoundel);
+            rims.Add(Prim(PrimitiveType.Cylinder, "RoofRim", group, new Vector3(0f, 1.3015f, -0.43f), new Vector3(0.6f, 0.003f, 0.6f), mNumberGold));
+            texts.Add(PlateText(group, new Vector3(0f, 1.3075f, -0.43f), Quaternion.Euler(90f, 0f, 0f), 4.2f));
+
             for (int s = -1; s <= 1; s += 2)
-                Prim(PrimitiveType.Cube, "DoorPlate", a1, new Vector3(0.915f * s, 0.07f, -0.2f), new Vector3(0.03f, 0.24f, 1.5f), mArmour);
-            var a2 = Empty("Armour2", hoodHinge, Vector3.zero).transform;
-            Prim(PrimitiveType.Cube, "HoodPlate", a2, new Vector3(0f, 0.075f, 0.95f), new Vector3(1.3f, 0.025f, 0.9f), mArmour);
+            {
+                var door = s < 0 ? vis.doorL : vis.doorR;
+                var dg = Empty("DoorNumber", body, Vector3.zero).transform;
+                Prim(PrimitiveType.Cylinder, "DoorRoundel", dg, new Vector3(0.884f * s, 0.60f, -0.05f), new Vector3(0.36f, 0.003f, 0.36f), mRoundel,
+                    false, Quaternion.Euler(0f, 0f, 90f));
+                rims.Add(Prim(PrimitiveType.Cylinder, "DoorRim", dg, new Vector3(0.8825f * s, 0.60f, -0.05f), new Vector3(0.43f, 0.003f, 0.43f), mNumberGold,
+                    false, Quaternion.Euler(0f, 0f, 90f)));
+                texts.Add(PlateText(dg, new Vector3(0.8885f * s, 0.60f, -0.05f), Quaternion.Euler(0f, s < 0 ? 90f : -90f, 0f), 3.0f));
+                dg.SetParent(door, true);
+            }
+            foreach (var r in rims) r.SetActive(false);
+            var beacon = Prim(PrimitiveType.Cube, "MarkBeacon", group, new Vector3(0f, 2.1f, -0.43f), new Vector3(0.38f, 0.38f, 0.38f), mNumberGold,
+                false, Quaternion.Euler(45f, 0f, 45f));
+            beacon.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            beacon.SetActive(false);
+
+            var plates = root.AddComponent<CarNumberPlates>();
+            plates.texts = texts.ToArray();
+            plates.favourRims = rims.ToArray();
+            plates.markBeacon = beacon;
+        }
+
+        /// <summary>Bolt-on parts that appear with upgrade levels (player car, Racer model frame).</summary>
+        static void BuildUpgradeVisuals(GameObject root, CarVisuals vis, CarController controller, CarHealth health)
+        {
+            var body = vis.bodyRoot;
+            var group = Empty("Upgrades", body, Vector3.zero).transform;
+
+            // Armour: L1 door plates (ride on the doors), L2 hood plates, L3 roof cage
+            var a1 = Empty("Armour1", vis.doorL, Vector3.zero).transform;
+            var a1r = Empty("Armour1R", vis.doorR, Vector3.zero).transform;
+            for (int s = -1; s <= 1; s += 2)
+            {
+                var plate = Prim(PrimitiveType.Cube, "DoorPlate", s < 0 ? a1 : a1r, Vector3.zero, new Vector3(0.03f, 0.14f, 1.2f), mArmour);
+                plate.transform.position = body.TransformPoint(new Vector3(0.9f * s, 0.36f, -0.05f));
+            }
+            a1.gameObject.AddComponent<ActiveFollower>().followers = new[] { a1r.gameObject };
+
+            var a2 = Empty("Armour2", vis.hoodPanel, Vector3.zero).transform; // hood-local: hinge at the rear edge
+            for (int s = -1; s <= 1; s += 2)
+                Prim(PrimitiveType.Cube, "HoodPlate", a2, new Vector3(0.42f * s, -0.04f, 0.66f), new Vector3(0.36f, 0.025f, 0.95f), mArmour, false, Quaternion.Euler(6f, 0f, 0f));
             for (int b = -2; b <= 2; b++)
-                Prim(PrimitiveType.Cube, "Rivet", a2, new Vector3(b * 0.28f, 0.09f, 0.55f), new Vector3(0.04f, 0.02f, 0.04f), mTrim);
+                Prim(PrimitiveType.Cube, "Rivet", a2, new Vector3(b * 0.28f, 0.0f, 0.22f), new Vector3(0.04f, 0.02f, 0.04f), mTrim);
+
             var a3 = Empty("Armour3", group, Vector3.zero).transform;
             for (int s = -1; s <= 1; s++)
-                Prim(PrimitiveType.Cube, "CageBar", a3, new Vector3(0.65f * s, 1.13f, -0.72f), new Vector3(0.05f, 0.05f, 1.7f), mArmour);
+                Prim(PrimitiveType.Cube, "CageBar", a3, new Vector3(0.55f * s, 1.335f, -0.43f), new Vector3(0.05f, 0.05f, 1.0f), mArmour);
             for (int b = 0; b < 3; b++)
-                Prim(PrimitiveType.Cube, "CageCross", a3, new Vector3(0f, 1.15f, -1.4f + b * 0.68f), new Vector3(1.4f, 0.05f, 0.05f), mArmour);
+                Prim(PrimitiveType.Cube, "CageCross", a3, new Vector3(0f, 1.36f, -0.85f + b * 0.42f), new Vector3(1.25f, 0.05f, 0.05f), mArmour);
 
             // Ram plate: L1 bull bar, L2 double bar, L3 plough with spikes
             var r1 = Empty("Ram1", group, Vector3.zero).transform;
-            Prim(PrimitiveType.Cube, "Bar", r1, new Vector3(0f, 0.05f, 2.43f), new Vector3(1.6f, 0.08f, 0.08f), mArmour);
+            Prim(PrimitiveType.Cube, "Bar", r1, new Vector3(0f, 0.38f, 2.33f), new Vector3(1.6f, 0.08f, 0.08f), mArmour);
             for (int s = -1; s <= 1; s += 2)
-                Prim(PrimitiveType.Cube, "Post", r1, new Vector3(0.55f * s, -0.04f, 2.39f), new Vector3(0.08f, 0.26f, 0.08f), mArmour);
+                Prim(PrimitiveType.Cube, "Post", r1, new Vector3(0.55f * s, 0.32f, 2.27f), new Vector3(0.08f, 0.2f, 0.12f), mArmour);
             var r2 = Empty("Ram2", group, Vector3.zero).transform;
-            Prim(PrimitiveType.Cube, "TopBar", r2, new Vector3(0f, 0.24f, 2.4f), new Vector3(1.5f, 0.07f, 0.07f), mArmour);
+            Prim(PrimitiveType.Cube, "TopBar", r2, new Vector3(0f, 0.57f, 2.31f), new Vector3(1.5f, 0.07f, 0.07f), mArmour);
             for (int s = -1; s <= 1; s += 2)
-                Prim(PrimitiveType.Cube, "Upright", r2, new Vector3(0.25f * s, 0.14f, 2.42f), new Vector3(0.06f, 0.26f, 0.06f), mArmour);
+                Prim(PrimitiveType.Cube, "Upright", r2, new Vector3(0.25f * s, 0.47f, 2.32f), new Vector3(0.06f, 0.22f, 0.06f), mArmour);
             var r3 = Empty("Ram3", group, Vector3.zero).transform;
-            Prim(PrimitiveType.Cube, "Plough", r3, new Vector3(0f, 0.02f, 2.52f), new Vector3(1.95f, 0.38f, 0.05f), mArmour, false, Quaternion.Euler(-25f, 0f, 0f));
+            Prim(PrimitiveType.Cube, "Plough", r3, new Vector3(0f, 0.36f, 2.42f), new Vector3(1.95f, 0.38f, 0.05f), mArmour, false, Quaternion.Euler(-25f, 0f, 0f));
             for (int b = -1; b <= 1; b++)
-                Prim(PrimitiveType.Cube, "Spike", r3, new Vector3(b * 0.6f, 0.08f, 2.62f), new Vector3(0.06f, 0.06f, 0.22f), mTrim);
+                Prim(PrimitiveType.Cube, "Spike", r3, new Vector3(b * 0.6f, 0.42f, 2.52f), new Vector3(0.06f, 0.06f, 0.22f), mTrim);
 
-            // Engine: L2 hood scoop, L3 side pipes (L1 is all under the hood)
-            var e2 = Empty("Engine2", hoodHinge, Vector3.zero).transform;
-            Prim(PrimitiveType.Cube, "Scoop", e2, new Vector3(0f, 0.11f, 0.55f), new Vector3(0.42f, 0.11f, 0.38f), mTrim);
-            Prim(PrimitiveType.Cube, "ScoopMouth", e2, new Vector3(0f, 0.12f, 0.74f), new Vector3(0.36f, 0.06f, 0.02f), mGate);
+            // Engine: L2 the modelled hood scoop, L3 side pipes (L1 is all under the hood)
+            var e2 = vis.scoop;
             var e3 = Empty("Engine3", group, Vector3.zero).transform;
             for (int s = -1; s <= 1; s += 2)
-                Prim(PrimitiveType.Cylinder, "SidePipe", e3, new Vector3(0.95f * s, -0.16f, 0.2f), new Vector3(0.09f, 0.55f, 0.09f), mMirror, false, Quaternion.Euler(90f, 0f, 0f));
+                Prim(PrimitiveType.Cylinder, "SidePipe", e3, new Vector3(0.93f * s, 0.26f, -0.1f), new Vector3(0.09f, 0.55f, 0.09f), mMirror, false, Quaternion.Euler(90f, 0f, 0f));
 
             var up = root.AddComponent<CarUpgrades>();
             up.car = controller;
             up.health = health;
             up.armourLevels = new[] { a1.gameObject, a2.gameObject, a3.gameObject };
             up.ramPlateLevels = new[] { r1.gameObject, r2.gameObject, r3.gameObject };
-            up.engineLevels = new GameObject[] { null, e2.gameObject, e3.gameObject };
-            foreach (var g in new[] { a1, a2, a3, r1, r2, r3, e2, e3 }) g.gameObject.SetActive(false);
+            up.engineLevels = new GameObject[] { null, e2 != null ? e2.gameObject : null, e3.gameObject };
+            foreach (var g in new[] { a1, a1r, a2, a3, r1, r2, r3, e2, e3 }) if (g != null) g.gameObject.SetActive(false);
         }
 
         /// <summary>The tablet the driver holds up in front of the windscreen (screen built at runtime by TabletUI).</summary>
@@ -1704,7 +1901,7 @@ namespace CarArena.EditorTools
             Prim(PrimitiveType.Cube, "Link", link, new Vector3(0f, 0f, 0.5f), new Vector3(0.07f, 0.07f, 1f), dark);
 
             // Tablet: rugged frame with bronze corner bumpers, screen on the -Z face (toward the driver).
-            const float tw = 0.58f, th = 0.365f; // fits through the side window, fills the view from the seat
+            const float tw = 0.40f, th = 0.25f; // fits through the side window, fills the view from the seat
             var tablet = new GameObject("Tablet").transform;
             tablet.SetParent(root, false);
             Prim(PrimitiveType.Cube, "Frame", tablet, Vector3.zero, new Vector3(tw, th, 0.03f), dark);
@@ -1741,7 +1938,10 @@ namespace CarArena.EditorTools
             arm.stowedPosition = new Vector3(0.5f, 1.9f, 0.9f);
             arm.stowedEuler = new Vector3(0f, 90f, 0f);
             // Below the sun visor (even when crash damage drops it) and above the steering wheel.
-            arm.presentedPosition = new Vector3(-0.37f, 0.757f, -0.1f);
+            arm.presentedPosition = new Vector3(-0.37f, 0.42f, -0.02f);
+            // Racer side window: low roof, narrow at the top; pass the tablet edge-on through its middle.
+            arm.outsidePosition = new Vector3(1.75f, 0.45f, -0.08f);
+            arm.insidePosition = new Vector3(0.25f, 0.45f, -0.08f);
             return arm;
         }
 
@@ -2052,9 +2252,9 @@ namespace CarArena.EditorTools
             return p;
         }
 
-        static DetachablePart RearViewMirror(Transform interior)
+        static DetachablePart RearViewMirror(Transform interior, Vector3 pos, Vector3 dropPos)
         {
-            var go = Empty("RearViewMirror", interior, new Vector3(0f, 0.97f, 0.08f), Quaternion.Euler(8f, -12f, 0f));
+            var go = Empty("RearViewMirror", interior, pos, Quaternion.Euler(8f, -12f, 0f));
             Prim(PrimitiveType.Cube, "Stalk", go.transform, new Vector3(0f, 0.03f, 0.02f), new Vector3(0.02f, 0.05f, 0.02f), mTrim);
             Prim(PrimitiveType.Cube, "Frame", go.transform, Vector3.zero, new Vector3(0.22f, 0.06f, 0.025f), mTrim);
             Prim(PrimitiveType.Cube, "Glass", go.transform, new Vector3(0f, 0f, -0.014f), new Vector3(0.2f, 0.045f, 0.004f), mMirror);
@@ -2066,7 +2266,7 @@ namespace CarArena.EditorTools
             p.joltSensitivity = 1f;
             p.looseEuler = new Vector3(18f, 25f, 12f);
             p.wobble = 8f;
-            p.dropLocalPosition = new Vector3(0.18f, 0.6f, 0.3f);
+            p.dropLocalPosition = dropPos;
             p.dropLocalEuler = new Vector3(85f, 30f, 0f);
             return p;
         }

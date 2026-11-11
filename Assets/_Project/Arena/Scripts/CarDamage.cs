@@ -27,6 +27,9 @@ namespace CarArena
         public float dentRadius = 0.6f;
         public float dentRadiusGrow = 0.8f;
 
+        [Tooltip("Impacts above this local height count as roof hits.")]
+        public float topHeight = 0.85f;
+
         [Header("Hood")]
         public float hoodBuckle = 0.14f;
         [Tooltip("Accumulated frontal severity that breaks the hood latch.")]
@@ -122,7 +125,7 @@ namespace CarArena
             info.rear = info.localPoint.z < -1.7f && !info.bottom;
             info.left = info.localPoint.x < -0.6f;
             info.right = info.localPoint.x > 0.6f;
-            info.top = info.localPoint.y > 0.85f;
+            info.top = info.localPoint.y > topHeight;
 
             float s = info.severity;
             float depth = maxDentDepth * s;
