@@ -99,6 +99,20 @@ namespace CarArena
 
         static float Smooth(float x) { x = Mathf.Clamp01(x); return x * x * (3f - 2f * x); }
 
+        /// <summary>Drop all eased state (speed FOV, rumble, shake, jolt, head turn) so the next frame is a clean cut,
+        /// e.g. when the car is parked back in the garage after a race.</summary>
+        public void ResetView()
+        {
+            SpeedFeel = BoostFeel = 0f;
+            fov = -1f;
+            shake = 0f;
+            yaw = yawVel = 0f;
+            joltPos = joltVel = tilt = tiltVel = Vector3.zero;
+            smoothAccel = Vector3.zero;
+            lastVelocity = car != null && car.Body != null ? car.Body.linearVelocity : Vector3.zero;
+            if (vcam != null) vcam.PreviousStateIsValid = false;
+        }
+
         void UpdateJolt(float dt)
         {
             // Semi-implicit spring, sub-stepped so a long frame can't blow it up.

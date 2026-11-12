@@ -184,7 +184,7 @@ namespace CarArena
         }
 
         /// <summary>Skip: drop the custom blends for a moment so the brain cuts instead of blending.</summary>
-        void HardCut()
+        public void HardCut()
         {
             if (brain == null) return;
             if (customBlends == null) customBlends = brain.CustomBlends;

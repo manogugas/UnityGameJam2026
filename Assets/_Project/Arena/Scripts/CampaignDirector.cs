@@ -264,6 +264,7 @@ namespace CarArena
         {
             if (CurrentPhase != Phase.Match || !RaceMode || health.IsDead) return;
             CurrentPhase = Phase.Result;
+            health.invulnerable = true; // past the line: post-race crashes don't count
             StartCoroutine(place == 1 ? Victory() : RacePlaced(place, time));
         }
 
@@ -298,6 +299,7 @@ namespace CarArena
         void BeginMatch()
         {
             CurrentPhase = Phase.Match;
+            health.invulnerable = false;
             ResetMatchTally();
             arena.StartMatch(nextEnemies);
             string who = PlayerMarked
@@ -337,6 +339,7 @@ namespace CarArena
         {
             if (CurrentPhase != Phase.Match || health.IsDead) return;
             CurrentPhase = Phase.Result;
+            health.invulnerable = true;
             StartCoroutine(Victory());
         }
 
@@ -410,6 +413,11 @@ namespace CarArena
             health.marked = false;
             plates.SetMarked(false);
             EnterGarage();
+            // Behind the black fade: cut straight to the driver's seat instead of blending over from the race
+            // camera, and drop the race's speed FOV / shake so the view doesn't drift as the fade lifts.
+            if (intro != null) intro.HardCut();
+            var head = player.GetComponentInChildren<CarCamera>();
+            if (head != null) head.ResetView();
             yield return new WaitForSeconds(0.3f);
             yield return overlay.FadeTo(0f, 0.6f);
         }
@@ -419,6 +427,7 @@ namespace CarArena
         void EnterGarage()
         {
             CurrentPhase = Phase.Garage;
+            health.invulnerable = false;
             var gun = player.GetComponent<CarGun>();
             if (gun != null) gun.Reload();
             ParkInGarage();

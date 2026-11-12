@@ -96,7 +96,7 @@ namespace CarArena.EditorTools
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             BuildEnvironment();
             BuildArena(asphalt, sand);
-            BuildCircuit(asphalt, sand);
+            // BuildCircuit(asphalt, sand); // second venue switched off for now: every race runs on the figure-8
             var car = BuildCar(asphalt);
             var playerGate = builtGates[0];
             car.transform.SetPositionAndRotation(playerGate.spawnPoint.position, playerGate.spawnPoint.rotation);
@@ -352,9 +352,9 @@ namespace CarArena.EditorTools
             RenderSettings.ambientGroundColor = new Color(0.3f, 0.28f, 0.25f);
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.Linear;
-            RenderSettings.fogStartDistance = 130f;
-            RenderSettings.fogEndDistance = 320f;
-            RenderSettings.fogColor = new Color(0.75f, 0.78f, 0.82f);
+            RenderSettings.fogStartDistance = 160f;
+            RenderSettings.fogEndDistance = 700f; // far enough for the hills to show through the haze
+            RenderSettings.fogColor = new Color(0.78f, 0.8f, 0.82f);
         }
 
         // ---------------------------------------------------------------- arena
@@ -468,6 +468,8 @@ namespace CarArena.EditorTools
             Wreck("Wreck0", props, new Vector3(-62f, 0f, 62f), 40f);
             Wreck("Wreck1", props, new Vector3(48f, 0f, -48f), -60f);
             Wreck("Wreck2", props, new Vector3(56f, 0f, -20f), 15f);
+
+            DressArena(arena, road.transform);
         }
 
         /// <summary>Chequered start/finish strip across the road.</summary>
@@ -949,8 +951,20 @@ namespace CarArena.EditorTools
                 }
                 float backDist = first + StandRowDepth * StandRows + 0.75f;
                 float backTop = lastTop + 8f;
-                Prim(PrimitiveType.Cube, "BackWall", side, n * backDist + Vector3.up * (backTop * 0.5f),
-                    new Vector3(2f * (backDist + 0.75f), backTop, 1.5f), mStone2, false, rot);
+                if (System.Array.IndexOf(GateSides, n) >= 0)
+                {
+                    // Doorway through the back wall too, or it closes off the tunnel (and the garage behind it).
+                    float gap = GateHalfWidth + 0.5f, wallHalf = backDist + 0.75f, segLen = wallHalf - gap, segMid = (wallHalf + gap) * 0.5f;
+                    foreach (float sgn in new[] { -1f, 1f })
+                        Prim(PrimitiveType.Cube, "BackWall", side, n * backDist + along * (sgn * segMid) + Vector3.up * (backTop * 0.5f),
+                            new Vector3(segLen, backTop, 1.5f), mStone2, false, rot);
+                    float roof = GateHeight + 0.5f;
+                    Prim(PrimitiveType.Cube, "BackWallOver", side, n * backDist + Vector3.up * ((backTop + roof) * 0.5f),
+                        new Vector3(2f * gap, backTop - roof, 1.5f), mStone2, false, rot);
+                }
+                else
+                    Prim(PrimitiveType.Cube, "BackWall", side, n * backDist + Vector3.up * (backTop * 0.5f),
+                        new Vector3(2f * (backDist + 0.75f), backTop, 1.5f), mStone2, false, rot);
 
                 // Colonnade on the top row, with alternating red and purple banners between the columns.
                 float colDist = first + StandRowDepth * (StandRows - 0.5f);
@@ -2219,7 +2233,7 @@ namespace CarArena.EditorTools
             {
                 campaign.race = race;
                 // First half of the ladder on the figure-8 in the arena, second half (and endless) on the circuit.
-                campaign.raceTracks = new[] { figure8Track, circuitTrack };
+                campaign.raceTracks = new[] { figure8Track }; // circuit disabled for now (see BuildCircuit)
             }
         }
 
@@ -2264,16 +2278,15 @@ namespace CarArena.EditorTools
             var campaign = Object.FindAnyObjectByType<CampaignDirector>();
             if (campaign != null) campaign.objectives = objectives;
 
-            // Boost pads on the four half-straights, all pointing at the crossing: boost in, T-bone harder.
+            // Two boost pads, just past the crossing on each straight, pointing the way the race runs
+            // (north up the N-S straight, west along the E-W one).
             var padOn = GlowMat("BoostChevronOn", new Color(1f, 0.55f, 0.1f), new Color(2.2f, 1.0f, 0.15f), false);
             var padOff = GlowMat("BoostChevronOff", new Color(0.35f, 0.2f, 0.08f), new Color(0.12f, 0.05f, 0f), false);
             var padBase = Mat("BoostPadBase", new Color(0.12f, 0.12f, 0.13f), 0.3f);
             var pads = new System.Collections.Generic.List<BoostPad>
             {
-                BoostPadAt(go.transform, new Vector3(0f, 0f, 19f), 180f, padBase, padOn, padOff),
-                BoostPadAt(go.transform, new Vector3(0f, 0f, -19f), 0f, padBase, padOn, padOff),
-                BoostPadAt(go.transform, new Vector3(19f, 0f, 0f), -90f, padBase, padOn, padOff),
-                BoostPadAt(go.transform, new Vector3(-19f, 0f, 0f), 90f, padBase, padOn, padOff),
+                BoostPadAt(go.transform, new Vector3(0f, 0f, 19f), 0f, padBase, padOn, padOff),
+                BoostPadAt(go.transform, new Vector3(-19f, 0f, 0f), -90f, padBase, padOn, padOff),
             };
             objectives.pads = pads.ToArray();
         }
