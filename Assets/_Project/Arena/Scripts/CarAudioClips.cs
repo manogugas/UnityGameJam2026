@@ -46,6 +46,7 @@ namespace CarArena
         {
             if (bank == null || carAudio == null || carAudio.car == null) return;
             if (!bank.Ready) { EngineClipBank.Step(bank); return; }
+            if (!WebAudio.Unlocked) return; // browser audio is still suspended: start once it's live
             var car = carAudio.car;
             float dt = Time.deltaTime;
 
@@ -95,7 +96,7 @@ namespace CarArena
 
         void Apply(AudioSource s, float volume, float pitch)
         {
-            s.volume = volume;
+            WebAudio.SetVolume(s, volume);
             s.pitch = Mathf.Clamp(pitch, 0.5f, 2f);
             bool spatial = carAudio.spatial;
             s.spatialBlend = spatial ? 1f : 0f;

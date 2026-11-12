@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace CarArena
 {
@@ -28,7 +29,46 @@ namespace CarArena
             }
         }
 
+        /// <summary>
+        /// Browsers keep audio suspended until the first click / key press on the page. Loops started before that
+        /// come up with whatever level they had at the start (and a level that never changes afterwards may never be
+        /// re-sent), so web loops wait for this before they start. Always true off the web.
+        /// </summary>
+        public static bool Unlocked
+        {
+            get
+            {
+                if (!Active || Application.isEditor) return true;
+                if (!unlocked)
+                {
+                    var m = Mouse.current; var k = Keyboard.current; var t = Touchscreen.current; var g = Gamepad.current;
+                    unlocked = (m != null && (m.leftButton.wasPressedThisFrame || m.rightButton.wasPressedThisFrame)) ||
+                               (k != null && k.anyKey.wasPressedThisFrame) ||
+                               (t != null && t.primaryTouch.press.wasPressedThisFrame) ||
+                               (g != null && g.startButton.wasPressedThisFrame);
+                }
+                return unlocked;
+            }
+        }
+
+        static bool unlocked;
+
+        /// <summary>
+        /// Set a looping source's volume on the web, re-sending it every so often even when unchanged (a tiny
+        /// alternating nudge), so the browser-side level can't stay stuck at a stale value.
+        /// </summary>
+        public static void SetVolume(AudioSource s, float volume)
+        {
+            if (s == null) return;
+            if (Active && (Time.frameCount & 31) == 0) volume += (Time.frameCount & 32) == 0 ? 1e-4f : 0f;
+            s.volume = volume;
+        }
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
-        static void ResetStatics() => EngineClipBank.Clear();
+        static void ResetStatics()
+        {
+            EngineClipBank.Clear();
+            unlocked = false;
+        }
     }
 }

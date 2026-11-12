@@ -71,6 +71,7 @@ namespace CarArena
         AudioSource crowdSource, ambientSource, crowdCabinSource, ambientCabinSource;
         AudioLowPassFilter crowdFilter, ambientFilter;
         float cabinTarget = 1f;
+        bool webLoopsStarted;
 
         void Start()
         {
@@ -113,10 +114,11 @@ namespace CarArena
             src.loop = true;
             src.spatialBlend = 0f;
             src.playOnAwake = false;
+            src.volume = 0f; // ApplyMix sets the real level (before play on the web)
             if (!WebAudio.Active) filter = go.AddComponent<AudioLowPassFilter>();
             // Start each loop at a random point so the two never line up the same way.
             src.time = Mathf.Min(startTime, clip.length * 0.9f);
-            src.Play();
+            if (!WebAudio.Active) src.Play(); // web: started in Update once the browser has unlocked audio
             return src;
         }
 
@@ -156,8 +158,16 @@ namespace CarArena
         static void SetLoop(AudioSource open, AudioSource cabinCopy, float volume, float muffled, float pitch)
         {
             if (cabinCopy == null) muffled = 0f; // no baked copy: fall back to the plain loop
-            if (open != null) { open.volume = volume * (1f - muffled); open.pitch = pitch; }
-            if (cabinCopy != null) { cabinCopy.volume = volume * muffled; cabinCopy.pitch = pitch; }
+            if (open != null) { WebAudio.SetVolume(open, volume * (1f - muffled)); open.pitch = pitch; }
+            if (cabinCopy != null) { WebAudio.SetVolume(cabinCopy, volume * muffled); cabinCopy.pitch = pitch; }
+        }
+
+        /// <summary>Web: start the loops (levels already set) in the same frame, each pair from the same point.</summary>
+        void StartWebLoops()
+        {
+            webLoopsStarted = true;
+            foreach (var s in new[] { crowdSource, crowdCabinSource, ambientSource, ambientCabinSource })
+                if (s != null && !s.isPlaying) s.Play();
         }
 
         /// <summary>0..1 how exciting the moment was (a big crash = ~1).</summary>
@@ -253,6 +263,7 @@ namespace CarArena
             roar = e;
             cabin = Mathf.MoveTowards(cabin, cabinTarget, Time.deltaTime / Mathf.Max(0.01f, cabinFadeTime));
             ApplyMix(excitement);
+            if (WebAudio.Active && !webLoopsStarted && WebAudio.Unlocked) StartWebLoops();
         }
 
         void OnDestroy()
