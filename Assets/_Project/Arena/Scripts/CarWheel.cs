@@ -39,8 +39,12 @@ namespace CarArena
         public float ContactSpeed { get; private set; }
         public float WheelSpeed => Omega * radius;
 
+        [Tooltip("Smoothing time (s) for the wheel's visual suspension travel. Physics runs at a fixed rate and the road " +
+                 "has fine noise; showing every step made the wheels jitter against the interpolated body.")]
+        public float visualSmoothing = 0.045f;
+
         RaycastHit hit;
-        float prevCompression, spinAngle;
+        float prevCompression, spinAngle, visualLength = -1f;
         readonly RaycastHit[] hits = new RaycastHit[8];
 
         public void UpdateSuspension(CarController car, Rigidbody rb, float dt)
@@ -171,7 +175,9 @@ namespace CarArena
         {
             if (visual == null) return;
             float len = Grounded ? restLength - Compression : restLength;
-            visual.localPosition = Vector3.down * len;
+            if (visualLength < 0f || dt <= 0f) visualLength = len;
+            else visualLength = Mathf.Lerp(visualLength, len, 1f - Mathf.Exp(-dt / Mathf.Max(0.001f, visualSmoothing)));
+            visual.localPosition = Vector3.down * visualLength;
             spinAngle = Mathf.Repeat(spinAngle + Omega * Mathf.Rad2Deg * dt, 360f);
             visual.localRotation = Quaternion.Euler(0f, SteerAngle, 0f) * Quaternion.Euler(spinAngle, 0f, 0f);
         }

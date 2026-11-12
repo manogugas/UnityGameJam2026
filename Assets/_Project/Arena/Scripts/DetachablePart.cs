@@ -42,6 +42,7 @@ namespace CarArena
         Vector3 dropStartPos;
         Quaternion dropStartRot;
         Coroutine ignoreRoutine;
+        float wobbleTime, wobbleSeed;
 
         void Awake()
         {
@@ -51,6 +52,7 @@ namespace CarArena
             carRb = GetComponentInParent<Rigidbody>();
             colliders = GetComponentsInChildren<Collider>(true);
             Health = maxHealth;
+            wobbleSeed = Random.Range(0f, 100f);
         }
 
         public void ApplyDamage(float amount)
@@ -76,10 +78,14 @@ namespace CarArena
         {
             if (State == PartState.Loose)
             {
+                // Smooth, low-frequency rattle (was a fast sine that sped up with speed and read as jitter).
                 float speed = carRb != null ? carRb.linearVelocity.magnitude : 0f;
-                float amp = wobble * Mathf.Clamp01(0.15f + speed / 20f);
-                float w = Mathf.Sin(Time.time * (9f + speed * 0.6f)) * amp;
-                transform.localRotation = baseRot * Quaternion.Euler(looseEuler) * Quaternion.Euler(w, w * 0.4f, w * 0.7f);
+                float amp = wobble * Mathf.Clamp01(0.2f + speed / 30f);
+                wobbleTime += Time.deltaTime * (2.5f + Mathf.Min(speed, 30f) * 0.08f);
+                float a = (Mathf.PerlinNoise(wobbleTime, wobbleSeed) - 0.5f) * 2f * amp;
+                float b = (Mathf.PerlinNoise(wobbleSeed, wobbleTime * 0.8f) - 0.5f) * 2f * amp;
+                Quaternion target = baseRot * Quaternion.Euler(looseEuler) * Quaternion.Euler(a, b * 0.4f, b * 0.7f);
+                transform.localRotation = Quaternion.Slerp(transform.localRotation, target, 1f - Mathf.Exp(-Time.deltaTime * 12f));
             }
             else if (State == PartState.Detached && mode == Mode.InteriorDrop && dropT < 1f)
             {

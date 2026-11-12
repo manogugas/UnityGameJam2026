@@ -44,8 +44,9 @@ namespace CarArena
             float speed = carBody != null ? Mathf.Max(0f, Vector3.Dot(carBody.linearVelocity, carBody.transform.forward)) : 0f;
             float wind = Mathf.Clamp01(speed / windSpeed);
             float t = Time.time;
+            // Low-frequency flutter (a 13 rad/s sine read as jitter at speed).
             float target = popAngle + windAngle * wind
-                           + (Mathf.Sin(t * 13f) * 0.5f + Mathf.PerlinNoise(t * 4f, 0.5f) - 0.5f) * flutter * (0.3f + wind);
+                           + (Mathf.PerlinNoise(t * 3f, 0.5f) - 0.5f) * 2f * flutter * (0.3f + wind);
 
             angVel += ((target - angle) * stiffness - angVel * damping) * dt;
             angle += angVel * dt;

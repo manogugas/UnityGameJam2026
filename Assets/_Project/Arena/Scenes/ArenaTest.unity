@@ -871,6 +871,7 @@ GameObject:
   m_Component:
   - component: {fileID: 24998248}
   - component: {fileID: 24998249}
+  - component: {fileID: 24998250}
   m_Layer: 0
   m_Name: LampLight
   m_TagString: Untagged
@@ -958,6 +959,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &24998250
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 24998247}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &25536946
 GameObject:
   m_ObjectHideFlags: 0
@@ -4203,6 +4233,7 @@ GameObject:
   m_Component:
   - component: {fileID: 103306677}
   - component: {fileID: 103306678}
+  - component: {fileID: 103306679}
   m_Layer: 0
   m_Name: LampLight
   m_TagString: Untagged
@@ -4290,6 +4321,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &103306679
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 103306676}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &104190812
 GameObject:
   m_ObjectHideFlags: 0
@@ -5134,6 +5194,7 @@ GameObject:
   m_Component:
   - component: {fileID: 131903130}
   - component: {fileID: 131903131}
+  - component: {fileID: 131903132}
   m_Layer: 0
   m_Name: WindowLight
   m_TagString: Untagged
@@ -5221,6 +5282,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &131903132
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 131903129}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &133506379
 GameObject:
   m_ObjectHideFlags: 0
@@ -7754,6 +7844,7 @@ GameObject:
   m_Component:
   - component: {fileID: 178436284}
   - component: {fileID: 178436285}
+  - component: {fileID: 178436286}
   m_Layer: 0
   m_Name: TunnelLight
   m_TagString: Untagged
@@ -7841,6 +7932,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &178436286
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 178436283}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &178784755
 GameObject:
   m_ObjectHideFlags: 0
@@ -23124,10 +23244,10 @@ Camera:
     width: 1
     height: 1
   near clip plane: 0.03
-  far clip plane: 900
+  far clip plane: 600
   field of view: 70
   orthographic: 0
-  orthographic size: 5
+  orthographic size: 10
   m_Depth: 0
   m_CullingMask:
     serializedVersion: 2
@@ -23152,7 +23272,7 @@ Transform:
   m_GameObject: {fileID: 497465624}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: -0.38, y: 1.36, z: -109.35}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -35268,6 +35388,7 @@ GameObject:
   m_Component:
   - component: {fileID: 737226234}
   - component: {fileID: 737226235}
+  - component: {fileID: 737226236}
   m_Layer: 0
   m_Name: LampLight
   m_TagString: Untagged
@@ -35355,6 +35476,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &737226236
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 737226233}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &744265772
 GameObject:
   m_ObjectHideFlags: 0
@@ -47639,6 +47789,7 @@ GameObject:
   m_Component:
   - component: {fileID: 978684142}
   - component: {fileID: 978684143}
+  - component: {fileID: 978684144}
   m_Layer: 0
   m_Name: LampLight
   m_TagString: Untagged
@@ -47726,6 +47877,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &978684144
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 978684141}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &979628487
 GameObject:
   m_ObjectHideFlags: 0
@@ -49468,6 +49648,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1024343961}
   - component: {fileID: 1024343962}
+  - component: {fileID: 1024343963}
   m_Layer: 0
   m_Name: TunnelLight
   m_TagString: Untagged
@@ -49555,6 +49736,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &1024343963
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1024343960}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &1027159817
 GameObject:
   m_ObjectHideFlags: 0
@@ -55303,7 +55513,7 @@ MonoBehaviour:
     m_Value: 0
   OutputChannel: 1
   StandbyUpdate: 2
-  m_StreamingVersion: 0
+  m_StreamingVersion: 20241001
   m_LegacyPriority: 0
   Target:
     TrackingTarget: {fileID: 0}
@@ -56583,8 +56793,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1179461705}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalRotation: {x: -0.039062306, y: 0.95956725, z: -0.22153349, w: -0.16919748}
+  m_LocalPosition: {x: 38.42572, y: 60.79639, z: 105.57377}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -56653,7 +56863,7 @@ MonoBehaviour:
     SplineCurvature: 0.5
   RecenteringTarget: 2
   HorizontalAxis:
-    Value: 200
+    Value: -160
     Center: 0
     Range: {x: -180, y: 180}
     Wrap: 1
@@ -56716,7 +56926,7 @@ MonoBehaviour:
     m_Value: 0
   OutputChannel: 1
   StandbyUpdate: 2
-  m_StreamingVersion: 0
+  m_StreamingVersion: 20241001
   m_LegacyPriority: 0
   Target:
     TrackingTarget: {fileID: 1641759256}
@@ -67267,7 +67477,7 @@ MonoBehaviour:
     m_Value: 0
   OutputChannel: 1
   StandbyUpdate: 2
-  m_StreamingVersion: 0
+  m_StreamingVersion: 20241001
   m_LegacyPriority: 0
   Target:
     TrackingTarget: {fileID: 6200333588131717094}
@@ -67390,8 +67600,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1402917980}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalRotation: {x: 0.09853763, y: 0, z: 0, w: 0.99513334}
+  m_LocalPosition: {x: 0, y: 3.3000002, z: -116}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -69577,6 +69787,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1450994554}
   - component: {fileID: 1450994555}
+  - component: {fileID: 1450994556}
   m_Layer: 0
   m_Name: LampLight
   m_TagString: Untagged
@@ -69664,6 +69875,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &1450994556
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1450994553}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &1452856133
 GameObject:
   m_ObjectHideFlags: 0
@@ -70668,6 +70908,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1495809740}
   - component: {fileID: 1495809739}
+  - component: {fileID: 1495809741}
   m_Layer: 0
   m_Name: Sun
   m_TagString: Untagged
@@ -70755,6 +70996,35 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1495809741
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1495809738}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &1497101279
 GameObject:
   m_ObjectHideFlags: 0
@@ -77393,6 +77663,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1651506321}
   - component: {fileID: 1651506322}
+  - component: {fileID: 1651506323}
   m_Layer: 0
   m_Name: LampLight
   m_TagString: Untagged
@@ -77480,6 +77751,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &1651506323
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1651506320}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &1656259796
 GameObject:
   m_ObjectHideFlags: 0
@@ -80353,7 +80653,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1721587696}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.0026393079, y: 0.98049194, z: -0.013196539, w: -0.19609836}
+  m_LocalRotation: {x: -0.0010862567, y: 0.9962776, z: -0.012693521, w: -0.08525706}
   m_LocalPosition: {x: 10, y: 3.2, z: -51}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
@@ -80447,7 +80747,7 @@ MonoBehaviour:
     m_Value: 0
   OutputChannel: 1
   StandbyUpdate: 2
-  m_StreamingVersion: 0
+  m_StreamingVersion: 20241001
   m_LegacyPriority: 0
   Target:
     TrackingTarget: {fileID: 0}
@@ -92402,6 +92702,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2008656458}
   - component: {fileID: 2008656459}
+  - component: {fileID: 2008656460}
   m_Layer: 0
   m_Name: WindowLight
   m_TagString: Untagged
@@ -92489,6 +92790,35 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
+--- !u!114 &2008656460
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2008656457}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &2010853906
 GameObject:
   m_ObjectHideFlags: 0
@@ -99725,6 +100055,22 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 10961191340501411, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 10961191340501411, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 331022280256364807, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 331022280256364807, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
     - target: {fileID: 411116505151648133, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
       propertyPath: director
       value: 
@@ -99733,6 +100079,34 @@ PrefabInstance:
       propertyPath: chaseCamera
       value: 
       objectReference: {fileID: 1153582661}
+    - target: {fileID: 1117659552484250087, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 1117659552484250087, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 1178431154258987636, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 1178431154258987636, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 1874524901902794260, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 1874524901902794260, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 2039702770509062152, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
     - target: {fileID: 2157116686536634536, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
       propertyPath: m_Name
       value: PlayerCar
@@ -99741,6 +100115,114 @@ PrefabInstance:
       propertyPath: director
       value: 
       objectReference: {fileID: 1141818976}
+    - target: {fileID: 2374207708990828332, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 2374207708990828332, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457136044656297408, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 3457136044656297408, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 3867959970653654052, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 3867959970653654052, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4451900501252130641, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 4451900501252130641, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4797172751195847529, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 4797172751195847529, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4876584842537871854, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4278716941
+      objectReference: {fileID: 0}
+    - target: {fileID: 4876584842537871854, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 4999669716013956890, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: InitialModule.startSizeY.minMaxState
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4999669716013956890, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: InitialModule.startSizeZ.minMaxState
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4999669716013956890, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: InitialModule.startRotationX.minMaxState
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 4999669716013956890, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: InitialModule.startRotationY.minMaxState
+      value: 3
+      objectReference: {fileID: 0}
+    - target: {fileID: 5059354701987212062, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 5059354701987212062, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5258991814596250685, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 5258991814596250685, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5436896149347576210, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 5436896149347576210, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5682121188216714727, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 5682121188216714727, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5691977094870248663, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4278716941
+      objectReference: {fileID: 0}
+    - target: {fileID: 5691977094870248663, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 5794107359645133026, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
     - target: {fileID: 5907912830612609495, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0
@@ -99780,6 +100262,66 @@ PrefabInstance:
     - target: {fileID: 5907912830612609495, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 6707529235994750465, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 6707529235994750465, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 6708740935414691181, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 6708740935414691181, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 7262303826534780173, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 7262303826534780173, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 7434511346938141733, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 7673313599458164687, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 7673313599458164687, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 7805023802693566077, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 7805023802693566077, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 7908131505647321753, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 7908131505647321753, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
+      objectReference: {fileID: 0}
+    - target: {fileID: 8739579066866522483, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4292470507
+      objectReference: {fileID: 0}
+    - target: {fileID: 8739579066866522483, guid: 7881da3829fc98c498abeed8a6a991eb, type: 3}
+      propertyPath: m_TextStyleHashCode
+      value: -1183493901
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
