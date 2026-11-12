@@ -24,6 +24,8 @@ namespace CarArena
         public Canvas canvas;
         public TabletArm arm;
         public GarageCamera garageCamera;
+        [Tooltip("Click / upgrade / not-enough-money sounds.")]
+        public UiAudio sounds;
 
         [Header("Lean in")]
         [Tooltip("Driver camera: zooms in on the tablet while it's presented (the windscreen leaves only a short strip).")]
@@ -110,6 +112,7 @@ namespace CarArena
         {
             if (canvas.worldCamera == null) canvas.worldCamera = Camera.main;
             if (driverCam != null) baseFov = driverCam.Lens.FieldOfView;
+            if (sounds == null) sounds = FindAnyObjectByType<UiAudio>();
         }
 
         // ------------------------------------------------------------------ show / hide
@@ -308,7 +311,7 @@ namespace CarArena
                 c.detail.text = next;
                 int cost = campaign.UpgradeCost(c.type);
                 bool affordable = cost >= 0 && run.money >= cost;
-                c.buy.interactable = affordable;
+                c.buy.interactable = cost >= 0; // clickable when unaffordable: plays "not enough money"
                 c.price.text = cost < 0 ? "MAX" : $"${cost}";
                 c.price.color = cost < 0 ? muted : affordable ? Color.black : bad;
             }
@@ -347,24 +350,34 @@ namespace CarArena
             hullText.text = $"{Mathf.CeilToInt(hp)}/{Mathf.RoundToInt(max)}";
             bool damaged = hp < max - 0.5f;
             int patch = campaign.RepairCost(false), full = campaign.RepairCost(true);
-            patchButton.interactable = damaged && campaign.Run.money >= patch;
-            fullButton.interactable = damaged && campaign.Run.money >= full;
+            patchButton.interactable = damaged;
+            fullButton.interactable = damaged;
             patchLabel.text = damaged ? $"PATCH +{campaign.settings.patchAmount}\n${patch}" : "PATCH";
             fullLabel.text = damaged ? $"FULL\n${full}" : "HULL OK";
         }
 
         void Buy(Card c)
         {
-            if (!campaign.BuyUpgrade(c.type)) return;
+            if (campaign.UpgradeCost(c.type) < 0) return; // maxed out
+            if (!campaign.BuyUpgrade(c.type)) { NotEnoughMoney(c.flash); return; }
+            if (sounds != null) sounds.Upgrade();
             c.flash.color = new Color(cyan.r, cyan.g, cyan.b, 0.6f);
             moneyPulse = 1f;
         }
 
         void DoRepair(bool full)
         {
-            if (!campaign.Repair(full)) return;
+            if (!campaign.Repair(full)) { NotEnoughMoney(repairFlash); return; }
+            if (sounds != null) sounds.Upgrade();
             repairFlash.color = new Color(good.r, good.g, good.b, 0.5f);
             moneyPulse = 1f;
+        }
+
+        /// <summary>Can't afford it: the "not enough money" sound and a red flash on the card.</summary>
+        void NotEnoughMoney(Image flash)
+        {
+            if (sounds != null) sounds.NoMoney();
+            if (flash != null) flash.color = new Color(bad.r, bad.g, bad.b, 0.45f);
         }
 
         // ------------------------------------------------------------------ building
@@ -373,10 +386,8 @@ namespace CarArena
         {
             var root = canvas.transform;
             Panel(root, "Glass", Vector2.zero, Vector2.one, screen);
-            // Faint grid on the glass.
-            var grid = Rect(root, "Grid", Vector2.zero, Vector2.one);
-            for (int i = 1; i < 16; i++) Panel(grid, "V", new Vector2(i / 16f, 0f), new Vector2(i / 16f, 1f), new Color(cyan.r, cyan.g, cyan.b, 0.035f)).rectTransform.sizeDelta = new Vector2(2f, 0f);
-            for (int i = 1; i < 10; i++) Panel(grid, "H", new Vector2(0f, i / 10f), new Vector2(1f, i / 10f), new Color(cyan.r, cyan.g, cyan.b, 0.035f)).rectTransform.sizeDelta = new Vector2(0f, 2f);
+            // Faint grid on the glass (one mipmapped texture: thin line quads crawl when the tablet is small on screen).
+            GridImage(root, 16, 10, new Color(cyan.r, cyan.g, cyan.b, 0.06f));
 
             var group = Rect(root, "Content", Vector2.zero, Vector2.one);
             content = group.gameObject.AddComponent<CanvasGroup>();
@@ -455,7 +466,7 @@ namespace CarArena
                 code.fontStyle = FontStyles.Bold;
                 Text(t, names[i], 24, TextAlignmentOptions.Left, new Vector2(0.07f, 0.69f), new Vector2(0.95f, 0.78f), Color.white).fontStyle = FontStyles.Bold;
                 var desc = Text(t, about[i], 20, TextAlignmentOptions.TopLeft, new Vector2(0.07f, 0.37f), new Vector2(0.93f, 0.67f), muted);
-                FitText(desc, 14f, 20f);
+                FitText(desc, 17f, 21f);
                 for (int j = 0; j < 3; j++)
                 {
                     float top = 0.33f - j * 0.1f;
@@ -505,6 +516,8 @@ namespace CarArena
             Panel(bar.transform, "Rule", new Vector2(0f, 0f), new Vector2(1f, 0f), line).rectTransform.sizeDelta = new Vector2(0f, 3f);
             header = Text(g, "", 34, TextAlignmentOptions.Left, new Vector2(0.1f, 0.915f), new Vector2(0.62f, 1f), Color.white);
             header.fontStyle = FontStyles.Bold;
+            header.textWrappingMode = TextWrappingModes.NoWrap; // one line: shrink rather than wrap
+            FitText(header, 22f, 34f);
             var badge = Panel(g, "Badge", new Vector2(0.66f, 0.93f), new Vector2(0.76f, 0.985f), new Color(0.93f, 0.92f, 0.88f));
             numberBadge = Text(badge.transform, "", 34, TextAlignmentOptions.Center, Vector2.zero, Vector2.one, new Color(0.06f, 0.06f, 0.06f));
             numberBadge.fontStyle = FontStyles.Bold;
@@ -549,8 +562,7 @@ namespace CarArena
             Place(carView.rectTransform, frame.transform, new Vector2(0.005f, 0.008f), new Vector2(0.995f, 0.992f));
             carView.color = new Color(0.82f, 0.95f, 1f);
             carView.raycastTarget = false;
-            for (int i = 1; i < 8; i++) Panel(frame.transform, "V", new Vector2(i / 8f, 0f), new Vector2(i / 8f, 1f), new Color(cyan.r, cyan.g, cyan.b, 0.08f)).rectTransform.sizeDelta = new Vector2(2f, 0f);
-            for (int i = 1; i < 5; i++) Panel(frame.transform, "H", new Vector2(0f, i / 5f), new Vector2(1f, i / 5f), new Color(cyan.r, cyan.g, cyan.b, 0.08f)).rectTransform.sizeDelta = new Vector2(0f, 2f);
+            GridImage(frame.transform, 8, 5, new Color(cyan.r, cyan.g, cyan.b, 0.09f));
             Brackets(frame.transform);
             Text(frame.transform, "LIVE  BAY 1", 20, TextAlignmentOptions.TopLeft, new Vector2(0.03f, 0.84f), new Vector2(0.5f, 0.97f), cyan).fontStyle = FontStyles.Bold;
 
@@ -595,13 +607,13 @@ namespace CarArena
             Icon(t, iconRepair, new Vector2(0.05f, 0.7f), new Vector2(0.36f, 0.95f), cyan);
             var repairTitle = Text(t, "REPAIR", 24, TextAlignmentOptions.Left, new Vector2(0.39f, 0.74f), new Vector2(0.98f, 0.93f), Color.white);
             repairTitle.fontStyle = FontStyles.Bold;
-            FitText(repairTitle, 16f, 24f);
-            patchButton = Btn(t, "PATCH", new Vector2(0.06f, 0.37f), new Vector2(0.94f, 0.62f), () => DoRepair(false), panelLight, Color.white, true);
+            FitText(repairTitle, 19f, 25f);
+            patchButton = Btn(t, "PATCH", new Vector2(0.06f, 0.37f), new Vector2(0.94f, 0.62f), () => DoRepair(false), panelLight, Color.white, true, click: false);
             patchLabel = patchButton.GetComponentInChildren<TextMeshProUGUI>();
-            fullButton = Btn(t, "FULL", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.32f), () => DoRepair(true), panelLight, Color.white, true);
+            fullButton = Btn(t, "FULL", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.32f), () => DoRepair(true), panelLight, Color.white, true, click: false);
             fullLabel = fullButton.GetComponentInChildren<TextMeshProUGUI>();
-            FitText(patchLabel, 13f, 20f);
-            FitText(fullLabel, 13f, 20f);
+            FitText(patchLabel, 16f, 21f);
+            FitText(fullLabel, 16f, 21f);
             repairFlash = Panel(t, "Flash", Vector2.zero, Vector2.one, Color.clear);
         }
 
@@ -614,14 +626,14 @@ namespace CarArena
             Icon(t, icon, new Vector2(0.05f, 0.7f), new Vector2(0.36f, 0.95f), cyan);
             card.title = Text(t, title, 24, TextAlignmentOptions.Left, new Vector2(0.39f, 0.74f), new Vector2(0.98f, 0.93f), Color.white);
             card.title.fontStyle = FontStyles.Bold;
-            FitText(card.title, 16f, 24f);
+            FitText(card.title, 19f, 25f);
             card.pips = new Image[3];
             for (int p = 0; p < 3; p++)
                 card.pips[p] = Panel(t, "Pip", new Vector2(0.39f + p * 0.19f, 0.67f), new Vector2(0.55f + p * 0.19f, 0.71f), cyan);
             card.detail = Text(t, "", 18, TextAlignmentOptions.TopLeft, new Vector2(0.07f, 0.34f), new Vector2(0.95f, 0.63f), muted);
-            FitText(card.detail, 12f, 18f);
+            FitText(card.detail, 15f, 19f);
             Card captured = card;
-            card.buy = Btn(t, "$0", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.3f), () => Buy(captured), gold, Color.black);
+            card.buy = Btn(t, "$0", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.3f), () => Buy(captured), gold, Color.black, click: false);
             card.price = card.buy.GetComponentInChildren<TextMeshProUGUI>();
             card.price.fontSize = 24;
             card.flash = Panel(t, "Flash", Vector2.zero, Vector2.one, Color.clear);
@@ -701,9 +713,45 @@ namespace CarArena
 
         static void AddOutline(Graphic g, Color c, float width)
         {
+            // At least 3 units: on a small screen the tablet is drawn at about half size, and 2-unit outlines
+            // drop below a pixel and flicker.
+            width = Mathf.Max(width, 3f);
             var o = g.gameObject.AddComponent<Outline>();
             o.effectColor = c;
             o.effectDistance = new Vector2(width, -width);
+        }
+
+        static Texture2D gridTexture;
+
+        /// <summary>A grid of cols x rows cells drawn by one tiled, mipmapped texture: it fades smoothly to a
+        /// faint tint when shown small instead of flickering line by line.</summary>
+        static void GridImage(Transform parent, int cols, int rows, Color c)
+        {
+            if (gridTexture == null)
+            {
+                const int size = 64;
+                gridTexture = new Texture2D(size, size, TextureFormat.RGBA32, true)
+                {
+                    name = "TabletGrid", wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Trilinear, anisoLevel = 4,
+                };
+                var px = new Color32[size * size];
+                for (int y = 0; y < size; y++)
+                    for (int x = 0; x < size; x++)
+                    {
+                        // A soft ~2-texel line along the cell edges (thin even where cells are large on screen).
+                        float d = Mathf.Min(Mathf.Min(x + 0.5f, size - x - 0.5f), Mathf.Min(y + 0.5f, size - y - 0.5f));
+                        byte a = (byte)(Mathf.Clamp01(1.5f - d) * 255f);
+                        px[y * size + x] = new Color32(255, 255, 255, a);
+                    }
+                gridTexture.SetPixels32(px);
+                gridTexture.Apply(true, true);
+            }
+            var img = new GameObject("Grid", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
+            Place(img.rectTransform, parent, Vector2.zero, Vector2.one);
+            img.texture = gridTexture;
+            img.uvRect = new Rect(0f, 0f, cols, rows);
+            img.color = c;
+            img.raycastTarget = false;
         }
 
         static Image Icon(Transform parent, Sprite sprite, Vector2 min, Vector2 max, Color c)
@@ -751,7 +799,8 @@ namespace CarArena
             return t;
         }
 
-        Button Btn(Transform parent, string label, Vector2 min, Vector2 max, Action onClick, Color bg, Color fg, bool outlined = false)
+        /// <param name="click">Play the button click (buttons that buy things play their own result sound).</param>
+        Button Btn(Transform parent, string label, Vector2 min, Vector2 max, Action onClick, Color bg, Color fg, bool outlined = false, bool click = true)
         {
             var img = Panel(parent, "Button", min, max, bg);
             img.raycastTarget = true;
@@ -765,7 +814,11 @@ namespace CarArena
             colors.disabledColor = new Color(0.4f, 0.4f, 0.4f, 0.55f);
             colors.fadeDuration = 0.08f;
             b.colors = colors;
-            b.onClick.AddListener(() => onClick());
+            b.onClick.AddListener(() =>
+            {
+                if (click && sounds != null) sounds.Click();
+                onClick();
+            });
             if (!string.IsNullOrEmpty(label))
             {
                 var t = Text(img.transform, label, 30, TextAlignmentOptions.Center, Vector2.zero, Vector2.one, fg);

@@ -122,17 +122,17 @@ namespace CarArena
             float bw = h * 0.42f, bh = h * 0.075f, x = (w - bw) * 0.5f, y = h * 0.3f;
             bool inEvent = campaign != null && campaign.CurrentPhase == CampaignDirector.Phase.Match;
 
-            if (GUI.Button(new Rect(x, y, bw, bh), "RESUME", button)) Close();
+            if (UiButton(new Rect(x, y, bw, bh), "RESUME", button)) Close();
             y += bh * 1.3f;
-            if (GUI.Button(new Rect(x, y, bw, bh), "SETTINGS", button)) page = Page.Settings;
+            if (UiButton(new Rect(x, y, bw, bh), "SETTINGS", button)) page = Page.Settings;
             y += bh * 1.3f;
-            if (inEvent && GUI.Button(new Rect(x, y, bw, bh), "RETIRE TO GARAGE", button))
+            if (inEvent && UiButton(new Rect(x, y, bw, bh), "RETIRE TO GARAGE", button))
             {
                 Close(false);
                 campaign.Retire();
             }
             if (inEvent) y += bh * 1.3f;
-            if (GUI.Button(new Rect(x, y, bw, bh), "QUIT GAME", button))
+            if (UiButton(new Rect(x, y, bw, bh), "QUIT GAME", button))
             {
                 Close(false);
                 Application.Quit();
@@ -177,8 +177,19 @@ namespace CarArena
             y += rowH * 1.3f;
 
             float bw = colW * 0.3f, bh = h * 0.07f;
-            if (GUI.Button(new Rect(x, y, bw, bh), "BACK", button)) Back();
-            if (GUI.Button(new Rect(x + colW - bw, y, bw, bh), "DEFAULTS", button)) GameSettings.ResetDefaults();
+            if (UiButton(new Rect(x, y, bw, bh), "BACK", button)) Back();
+            if (UiButton(new Rect(x + colW - bw, y, bw, bh), "DEFAULTS", button)) GameSettings.ResetDefaults();
+        }
+
+        UiAudio sounds;
+
+        /// <summary>GUI.Button with the interface click.</summary>
+        bool UiButton(Rect r, string text, GUIStyle style)
+        {
+            if (!GUI.Button(r, text, style)) return false;
+            if (sounds == null) sounds = FindAnyObjectByType<UiAudio>();
+            if (sounds != null) sounds.Click();
+            return true;
         }
 
         void Section(float x, ref float y, float width, float rowH, string text)

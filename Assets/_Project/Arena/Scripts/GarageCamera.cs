@@ -34,7 +34,13 @@ namespace CarArena
         {
             if (on && Texture == null)
             {
-                Texture = new RenderTexture(resolution.x, resolution.y, 24) { name = "GarageView", antiAliasing = 2 };
+                // Mipmapped + trilinear: on small screens the feed is shown far below its size, and without mips
+                // the orbiting picture shimmers.
+                Texture = new RenderTexture(resolution.x, resolution.y, 24)
+                {
+                    name = "GarageView", antiAliasing = 2, useMipMap = true, autoGenerateMips = true,
+                    filterMode = FilterMode.Trilinear, anisoLevel = 4,
+                };
                 cam.targetTexture = Texture;
             }
             cam.enabled = on;

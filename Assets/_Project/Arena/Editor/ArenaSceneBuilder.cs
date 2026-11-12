@@ -2102,6 +2102,31 @@ namespace CarArena.EditorTools
             return arm;
         }
 
+        /// <summary>Interface sounds: button clicks (A/B), upgrade bought, not enough money.</summary>
+        static UiAudio BuildUiAudio()
+        {
+            AudioClip Load(string file) => AssetDatabase.LoadAssetAtPath<AudioClip>(AudioDir + "/SFX/UI/" + file + ".wav");
+            var ui = new GameObject("UiAudio").AddComponent<UiAudio>();
+            ui.clickA = Load("Interaction Button A");
+            ui.clickB = Load("Interaction Button B");
+            ui.upgrade = Load("Upgrade Sound");
+            ui.noMoney = Load("Not Enough Money");
+            return ui;
+        }
+
+        /// <summary>The generator hum in the workshop (the only sound while you're in the garage).</summary>
+        static GarageAmbience BuildGarageAmbience(ArenaGate playerGate)
+        {
+            string path = AudioDir + "/Music/Ambient/Generator Room Loop.wav";
+            var go = new GameObject("GarageAmbience");
+            go.transform.SetParent(playerGate.transform, false);
+            go.transform.localPosition = new Vector3(0f, 2f, GarageCarZ);
+            var amb = go.AddComponent<GarageAmbience>();
+            amb.loop = AssetDatabase.LoadAssetAtPath<AudioClip>(path);
+            if (amb.loop != null) CabinAudioBaker.WebImport(path); // web: decoded up front, not streamed
+            return amb;
+        }
+
         static void BuildCampaign(GameObject playerCar, ArenaGate playerGate, ArenaDirector director, GameObject[] enemyPrefabs)
         {
             var settings = CampaignAsset(enemyPrefabs);
@@ -2158,6 +2183,7 @@ namespace CarArena.EditorTools
             tabletUI.iconBoost = ArenaArt.IconBoost();
             tabletUI.iconGun = ArenaArt.IconGun();
             tabletUI.iconTraction = ArenaArt.IconTraction();
+            tabletUI.sounds = BuildUiAudio();
 
             campaign.settings = settings;
             campaign.player = playerCar.GetComponent<CarController>();
@@ -2168,6 +2194,7 @@ namespace CarArena.EditorTools
             campaign.overlay = overlay;
             campaign.playerGate = playerGate;
             campaign.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            campaign.garageAmbience = BuildGarageAmbience(playerGate);
             if (campaign.intro != null) campaign.intro.autoPlay = false;
             director.waitForIntro = true;
         }

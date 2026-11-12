@@ -32,7 +32,7 @@ namespace CarArena.EditorTools
         }
 
         /// <summary>Web: decompress on load (a real Web Audio buffer) instead of streaming.</summary>
-        static void WebImport(string path)
+        public static void WebImport(string path)
         {
             var imp = (AudioImporter)AssetImporter.GetAtPath(path);
             var s = imp.GetOverrideSampleSettings("WebGL");

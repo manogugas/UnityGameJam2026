@@ -30,6 +30,8 @@ namespace CarArena
         public ArenaGate playerGate;
         public ArenaCrowd crowd;
         public RaceDirector race;
+        [Tooltip("Generator hum in the workshop; the crowd and the car are silent while you're in the garage.")]
+        public GarageAmbience garageAmbience;
         [Tooltip("Race venues in ladder order: the first half of the ladder races on [0], the second half (and endless) on [1].")]
         public RaceTrack[] raceTracks;
         [Tooltip("Share of the win reward paid for 2nd, 3rd... place in a race.")]
@@ -221,6 +223,7 @@ namespace CarArena
             tablet.Hide();
             garageCamera.SetActive(false);
             SetCursor(false);
+            SetGarageSound(false); // leaving the workshop: generator out, crowd and car back (races and fights)
 
             bool marked = PlayerMarked;
             health.marked = marked;
@@ -443,6 +446,7 @@ namespace CarArena
             if (hud != null) hud.enabled = false;
             if (combatHud != null) combatHud.enabled = false;
             if (crowd != null) crowd.SetCabin(true);
+            SetGarageSound(true);
             garageCamera.SetActive(true);
             tablet.Show();
             SetCursor(true);
@@ -521,6 +525,16 @@ namespace CarArena
             if (upgrades == null) return;
             upgrades.Apply(r.Level(UpgradeType.Armour), r.Level(UpgradeType.Engine), r.Level(UpgradeType.Tyres), r.Level(UpgradeType.RamPlate),
                 r.Level(UpgradeType.Boost), r.Level(UpgradeType.Gun), r.Level(UpgradeType.Traction));
+        }
+
+        /// <summary>In the garage only the generator hums: crowd and car fade out. Leaving brings them back
+        /// (the intro then fades the car in at the gate).</summary>
+        void SetGarageSound(bool inGarage)
+        {
+            if (garageAmbience != null) garageAmbience.SetActive(inGarage);
+            if (crowd != null) crowd.SetMuted(inGarage);
+            var carAudio = player.GetComponent<CarAudio>();
+            if (carAudio != null) carAudio.masterGain = inGarage ? 0f : 1f;
         }
 
         static void SetCursor(bool visible)

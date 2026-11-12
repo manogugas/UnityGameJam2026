@@ -72,6 +72,10 @@ namespace CarArena
         AudioLowPassFilter crowdFilter, ambientFilter;
         float cabinTarget = 1f;
         bool webLoopsStarted;
+        float muteLevel = 1f, muteTarget = 1f;
+
+        /// <summary>Fade the crowd out (in the garage) or back in.</summary>
+        public void SetMuted(bool muted) => muteTarget = muted ? 0f : 1f;
 
         void Start()
         {
@@ -128,7 +132,7 @@ namespace CarArena
         void ApplyMix(float e)
         {
             if (WebAudio.Active) { ApplyWebMix(e); return; }
-            float vol = Mathf.Lerp(1f, cabinVolume, cabin);
+            float vol = Mathf.Lerp(1f, cabinVolume, cabin) * muteLevel;
             float cutoff = Mathf.Lerp(22000f, cabinCutoff, Mathf.Sqrt(cabin));
             if (crowdSource != null)
             {
@@ -147,7 +151,7 @@ namespace CarArena
         /// pre-muffled copies (sqrt matches how the desktop cutoff falls), and the Crowd slider applied directly.</summary>
         void ApplyWebMix(float e)
         {
-            float vol = Mathf.Lerp(1f, cabinVolume, cabin) * WebAudio.Volume(GameSettings.Channel.Crowd);
+            float vol = Mathf.Lerp(1f, cabinVolume, cabin) * muteLevel * WebAudio.Volume(GameSettings.Channel.Crowd);
             float muffled = Mathf.Sqrt(cabin);
             float crowd = (crowdVolume + cheerBoost * Mathf.Clamp01(e)) * vol;
             float pitch = 1f + 0.04f * Mathf.Clamp01(e);
@@ -262,6 +266,7 @@ namespace CarArena
             }
             roar = e;
             cabin = Mathf.MoveTowards(cabin, cabinTarget, Time.deltaTime / Mathf.Max(0.01f, cabinFadeTime));
+            muteLevel = Mathf.MoveTowards(muteLevel, muteTarget, Time.deltaTime / 1.2f);
             ApplyMix(excitement);
             if (WebAudio.Active && !webLoopsStarted && WebAudio.Unlocked) StartWebLoops();
         }
