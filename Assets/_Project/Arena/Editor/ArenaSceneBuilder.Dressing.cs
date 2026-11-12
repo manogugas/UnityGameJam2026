@@ -15,7 +15,7 @@ namespace CarArena.EditorTools
     public static partial class ArenaSceneBuilder
     {
         static readonly Vector3[] Sides = { Vector3.forward, Vector3.right, Vector3.back, Vector3.left };
-        static Texture2D sandTex;
+        static Texture2D sandTex, sandGrain;
 
         static float StandLastTop => StandFirstTop + StandRise * (StandRows - 1);
         static float StandBackDist => ArenaHalf + 2f + StandRowDepth * StandRows + 0.75f;
@@ -26,11 +26,11 @@ namespace CarArena.EditorTools
             var dress = Empty("Dressing", arena, Vector3.zero).transform;
 
             // Ground textures.
-            // Sand in two layers so it doesn't look tiled: big colour patches repeating only ~3 times across the
-            // floor, plus fine grain through the URP detail map (multiplied x2) repeating every ~4 m.
+            // Sand in two layers so it doesn't look tiled: the colour layer spans the whole floor once (no repeat
+            // at all), plus fine featureless grain through the URP detail map (multiplied x2) every ~3.7 m.
             sandTex = ArenaArt.SandMacroTexture();
-            var grain = ArenaArt.SandDetailTexture();
-            ApplySand(mSand, sandTex, grain, new Vector2(3f, 3f), new Vector2(36f, 36f), Color.white);
+            sandGrain = ArenaArt.SandDetailTexture();
+            ApplySand(mSand, sandTex, sandGrain, Vector2.one, new Vector2(40f, 40f), Color.white);
             EditorUtility.SetDirty(mSand);
             if (roadObject != null)
             {
@@ -86,6 +86,32 @@ namespace CarArena.EditorTools
                 false, Quaternion.Euler(90f, 0f, 0f));
             quad.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
         }
+
+        /// <summary>
+        /// Mark everything that never moves as Static (the Inspector checkbox: batching, GI, occlusion,
+        /// navigation...). Skipped: anything under a Rigidbody (cars, loose props, the portcullis), cameras,
+        /// lights, UI, and objects that move or animate their own transforms.
+        /// </summary>
+        static void MarkStatic()
+        {
+            var scene = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene();
+            foreach (var root in scene.GetRootGameObjects()) MarkStatic(root.transform);
+        }
+
+        static void MarkStatic(Transform t)
+        {
+            if (Moves(t)) return; // and everything under it
+            t.gameObject.isStatic = true;
+            for (int i = 0; i < t.childCount; i++) MarkStatic(t.GetChild(i));
+        }
+
+        static bool Moves(Transform t) =>
+            t.GetComponent<Rigidbody>() != null || t.GetComponent<Camera>() != null || t.GetComponent<Light>() != null ||
+            t.GetComponent<Canvas>() != null || t.GetComponent<RectTransform>() != null ||
+            t.GetComponent<Unity.Cinemachine.CinemachineVirtualCameraBase>() != null ||
+            t.GetComponent<ArenaCrowd>() != null || t.GetComponent<TabletArm>() != null || t.GetComponent<GarageCamera>() != null ||
+            t.GetComponent<ChaseCamera>() != null || t.GetComponent<IntroCinematic>() != null || t.GetComponent<EmperorGift>() != null ||
+            t.GetComponent<CarController>() != null || t.GetComponent<ParticleSystem>() != null;
 
         static bool NearGate(Vector3 n, float x, float clear) =>
             System.Array.IndexOf(GateSides, n) >= 0 && Mathf.Abs(x) < clear;
@@ -322,7 +348,7 @@ namespace CarArena.EditorTools
         {
             var root = Empty("Countryside", parent, Vector3.zero).transform;
             var grass = Mat("DryGrass", new Color(0.62f, 0.66f, 0.42f), 0f);
-            ApplySand(grass, sandTex, ArenaArt.SandDetailTexture(), new Vector2(60f, 60f), new Vector2(900f, 900f), new Color(0.62f, 0.66f, 0.42f));
+            ApplySand(grass, sandTex, sandGrain, new Vector2(10f, 10f), new Vector2(1200f, 1200f), new Color(0.6f, 0.62f, 0.4f));
             var ground = Prim(PrimitiveType.Cube, "Ground", root, new Vector3(0f, -0.12f, 0f), new Vector3(5000f, 0.2f, 5000f), grass);
             ground.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
 

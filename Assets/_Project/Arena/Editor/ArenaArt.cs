@@ -369,17 +369,17 @@ namespace CarArena.EditorTools
         /// </summary>
         public static Texture2D SandMacroTexture()
         {
-            const int size = 512;
+            const int size = 1024;
             var tex = new Texture2D(size, size, TextureFormat.RGB24, true);
             var px = new Color[size * size];
-            var light = new Color(0.86f, 0.77f, 0.58f);
-            var dark = new Color(0.7f, 0.59f, 0.42f);
+            var light = new Color(0.93f, 0.85f, 0.66f);
+            var dark = new Color(0.82f, 0.72f, 0.54f);
             for (int y = 0; y < size; y++)
                 for (int x = 0; x < size; x++)
                 {
                     float u = x / (float)size, v = y / (float)size;
-                    float broad = Fbm(u, v, 2, 5, 41);
-                    float patches = Fbm(u + Fbm(u, v, 3, 2, 5) * 0.2f, v, 5, 4, 43); // warped so blobs aren't round
+                    float broad = Fbm(u, v, 3, 6, 41);
+                    float patches = Fbm(u + Fbm(u, v, 3, 2, 5) * 0.2f, v, 9, 5, 43); // warped so blobs aren't round
                     float k = 0.5f + (broad - 0.5f) * 0.9f + (patches - 0.5f) * 0.6f;
                     Color c = Color.Lerp(dark, light, Mathf.Clamp01(k));
                     c.a = 1f;
@@ -402,13 +402,14 @@ namespace CarArena.EditorTools
                 for (int x = 0; x < size; x++)
                 {
                     float u = x / (float)size, v = y / (float)size;
-                    float clump = Fbm(u, v, 16, 3, 51) - 0.5f;
-                    float ripple = Mathf.Sin((v * 9f + Fbm(u, v, 6, 2, 53) * 2.5f) * Mathf.PI * 2f) * 0.5f;
-                    float g = 0.5f + clump * 0.1f + ripple * 0.025f + ((float)rng.NextDouble() - 0.5f) * 0.06f;
+                    // Only small-scale features (no blobs, no regular ripples): at a distance the grain mips
+                    // down to flat grey and leaves the colour to the macro layer, so nothing reads as a tile.
+                    float clump = Fbm(u, v, 32, 3, 51) - 0.5f;
+                    float g = 0.5f + clump * 0.06f + ((float)rng.NextDouble() - 0.5f) * 0.07f;
                     if (rng.NextDouble() < 0.01) g -= 0.07f; // pebble
                     px[y * size + x] = new Color(g, g, g, 1f);
                 }
-            return SaveTiled(tex, px, "SandDetail");
+            return SaveTiled(tex, px, "SandDetail", linear: true);
         }
 
         /// <summary>
@@ -508,7 +509,8 @@ namespace CarArena.EditorTools
             return SaveTiled(tex, px, "Road");
         }
 
-        static Texture2D SaveTiled(Texture2D tex, Color[] px, string name)
+        /// <param name="linear">Detail (x2) maps must be linear: an sRGB 0.5 grey samples as ~0.21 and darkens everything.</param>
+        static Texture2D SaveTiled(Texture2D tex, Color[] px, string name, bool linear = false)
         {
             tex.SetPixels(px);
             tex.Apply();
@@ -516,6 +518,7 @@ namespace CarArena.EditorTools
             var imp = (TextureImporter)AssetImporter.GetAtPath(path);
             imp.wrapMode = TextureWrapMode.Repeat;
             imp.anisoLevel = 8;
+            imp.sRGBTexture = !linear;
             imp.SaveAndReimport();
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
         }

@@ -116,6 +116,8 @@ namespace CarArena.EditorTools
             BuildObjectives(director);
             BuildRace(director, car);
 
+            MarkStatic();
+            SceneMeshMerger.Merge(); // static meshes -> one mesh per material per map cell
             EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
             AssetDatabase.SaveAssets();
             Debug.Log("[CarArena] Built " + ScenePath);
@@ -2278,15 +2280,15 @@ namespace CarArena.EditorTools
             var campaign = Object.FindAnyObjectByType<CampaignDirector>();
             if (campaign != null) campaign.objectives = objectives;
 
-            // Two boost pads, just past the crossing on each straight, pointing the way the race runs
-            // (north up the N-S straight, west along the E-W one).
+            // Two boost pads, one on each straight before the crossing, pointing the way the race runs
+            // (north up the N-S straight, west along the E-W one). Positions as placed by hand in the scene.
             var padOn = GlowMat("BoostChevronOn", new Color(1f, 0.55f, 0.1f), new Color(2.2f, 1.0f, 0.15f), false);
             var padOff = GlowMat("BoostChevronOff", new Color(0.35f, 0.2f, 0.08f), new Color(0.12f, 0.05f, 0f), false);
             var padBase = Mat("BoostPadBase", new Color(0.12f, 0.12f, 0.13f), 0.3f);
             var pads = new System.Collections.Generic.List<BoostPad>
             {
-                BoostPadAt(go.transform, new Vector3(0f, 0f, 19f), 0f, padBase, padOn, padOff),
-                BoostPadAt(go.transform, new Vector3(-19f, 0f, 0f), -90f, padBase, padOn, padOff),
+                BoostPadAt(go.transform, new Vector3(25.04f, 0f, 0f), -90f, padBase, padOn, padOff),
+                BoostPadAt(go.transform, new Vector3(0f, 0f, -24.94f), 0f, padBase, padOn, padOff),
             };
             objectives.pads = pads.ToArray();
         }
