@@ -17,6 +17,8 @@ namespace CarArena
         public float maxAngle = 60f;
         [Tooltip("Per-car cooldown.")]
         public float cooldown = 5f;
+        [Tooltip("Boost meter (CarBoost) refilled by driving over the pad.")]
+        public float padRefill = 0.35f;
 
         [Header("Visuals")]
         [Tooltip("Chevron renderers from the back of the pad to the tip, renderersPerChevron each.")]
@@ -57,6 +59,8 @@ namespace CarArena
             if (Vector3.Dot(rb.linearVelocity, Direction) < 2f) return; // must be rolling forward over it
             lastUse[car] = Time.time;
             car.Boost(boostSeconds);
+            var meter = car.GetComponent<CarBoost>();
+            if (meter != null) meter.AddCharge(padRefill * meter.padRefillScale);
             flash = 1f;
         }
 

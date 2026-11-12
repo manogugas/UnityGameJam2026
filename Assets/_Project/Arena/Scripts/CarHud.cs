@@ -18,6 +18,8 @@ namespace CarArena
         public CarHealth health;
         public ArenaDirector director;
         public ChaseCamera chaseCamera;
+        CarGun gun;
+        CarBoost boost;
         [Tooltip("Shown under WRECKED. Empty = no hint (the campaign shows its own defeat screen).")]
         public string wreckedHint = "<b>Backspace</b> to repair and get back in";
         [Tooltip("Debug overlay (toggle with F3).")]
@@ -40,7 +42,7 @@ namespace CarArena
             var kb = Keyboard.current;
             if (kb == null) return;
             if (kb.f3Key.wasPressedThisFrame) SetDebugVisible(!debugVisible);
-            if (kb.f4Key.wasPressedThisFrame && chaseCamera != null) chaseCamera.enabledByUser = !chaseCamera.enabledByUser;
+            if ((kb.f4Key.wasPressedThisFrame || kb.cKey.wasPressedThisFrame) && chaseCamera != null) chaseCamera.enabledByUser = !chaseCamera.enabledByUser;
         }
 
         void OnDisable()
@@ -106,6 +108,8 @@ namespace CarArena
                 GUI.Label(new Rect(w - 222, 18, 200, 30), $"KILLS {health.Kills}", kills);
             }
 
+            DrawMeters(w, h);
+
             if (health.IsDead && !string.IsNullOrEmpty(wreckedHint))
             {
                 GUI.Label(new Rect(0, h * 0.3f, w, 80), "<color=#ff4030>WRECKED</color>", banner);
@@ -113,15 +117,37 @@ namespace CarArena
             }
         }
 
+        /// <summary>Ammo and boost bars, bottom centre.</summary>
+        void DrawMeters(float w, float h)
+        {
+            if (gun == null) gun = GetComponent<CarGun>();
+            if (boost == null) boost = GetComponent<CarBoost>();
+            float bw = Mathf.Min(260f, w * 0.2f), bh = 10f, x = (w - bw) * 0.5f, y = h - 34f;
+            if (gun != null) Meter(new Rect(x, y, bw, bh), gun.Ammo01, gun.Firing ? new Color(1f, 0.85f, 0.4f) : new Color(1f, 0.7f, 0.25f), $"AMMO {Mathf.FloorToInt(gun.Ammo)}");
+            if (boost != null) Meter(new Rect(x, y - 26f, bw, bh), boost.charge, boost.Boosting ? new Color(0.5f, 0.95f, 1f) : new Color(0.3f, 0.75f, 1f), "BOOST");
+        }
+
+        void Meter(Rect r, float f, Color fill, string label)
+        {
+            var old = GUI.color;
+            GUI.color = new Color(0f, 0f, 0f, 0.55f);
+            GUI.DrawTexture(new Rect(r.x - 2, r.y - 2, r.width + 4, r.height + 4), Texture2D.whiteTexture);
+            GUI.color = fill;
+            GUI.DrawTexture(new Rect(r.x, r.y, r.width * Mathf.Clamp01(f), r.height), Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 1f, 1f, 0.85f);
+            GUI.Label(new Rect(r.x, r.y - 18f, r.width, 18f), label, small);
+            GUI.color = old;
+        }
+
         /// <summary>Always-on reminder of the debug and camera keys (the debug overlay's own header lists them when open).</summary>
         void DrawKeyHint()
         {
-            const string text = "<b>F3</b> debug menu    <b>F4</b> 3rd-person camera";
+            const string text = "<b>LMB/Ctrl</b> gun    <b>Shift</b> boost    <b>C</b> camera    <b>Esc</b> menu    <b>F3</b> debug";
             var old = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.6f);
-            GUI.Label(new Rect(16, 11, 500, 22), text, small);
+            GUI.Label(new Rect(16, 11, 700, 22), text, small);
             GUI.color = new Color(1f, 1f, 1f, 0.8f);
-            GUI.Label(new Rect(15, 10, 500, 22), text, small);
+            GUI.Label(new Rect(15, 10, 700, 22), text, small);
             GUI.color = old;
         }
 

@@ -112,6 +112,7 @@ namespace CarArena.EditorTools
             BuildCampaign(car, playerGate, director, new[] { enemyPrefabs[0], enemyPrefabs[1], enemyPrefabs[2], champion });
             BuildChaseCamera(car);
             BuildObjectives(director);
+            BuildRace(director, car);
 
             EditorSceneManager.SaveScene(EditorSceneManager.GetActiveScene(), ScenePath);
             AssetDatabase.SaveAssets();
@@ -414,6 +415,13 @@ namespace CarArena.EditorTools
             road.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
             Tag(road, asphalt);
 
+            // Race line + start/finish: 12 m up the north-south straight, just past the crossing.
+            var raceTrack = track.gameObject.AddComponent<RaceTrack>();
+            raceTrack.points = centreline.ToArray();
+            raceTrack.halfWidth = TrackHalfWidth;
+            raceTrack.startIndex = 6;
+            StartLine(track, centreline[6], (centreline[7] - centreline[5]).normalized);
+
             var layout = track.gameObject.AddComponent<ArenaLayout>();
             var ne = new Vector2(LoopOffset, LoopOffset);
             var sw = new Vector2(-LoopOffset, -LoopOffset);
@@ -455,6 +463,23 @@ namespace CarArena.EditorTools
             Wreck("Wreck0", props, new Vector3(-62f, 0f, 62f), 40f);
             Wreck("Wreck1", props, new Vector3(48f, 0f, -48f), -60f);
             Wreck("Wreck2", props, new Vector3(56f, 0f, -20f), 15f);
+        }
+
+        /// <summary>Chequered start/finish strip across the road.</summary>
+        static void StartLine(Transform parent, Vector3 at, Vector3 forward)
+        {
+            var white = Mat("CheckerWhite", new Color(0.92f, 0.92f, 0.9f), 0.2f);
+            var black = Mat("CheckerBlack", new Color(0.05f, 0.05f, 0.05f), 0.2f);
+            var root = Empty("StartFinish", parent, at + Vector3.up * 0.025f, Quaternion.LookRotation(forward, Vector3.up)).transform;
+            const float cell = 0.8f;
+            int across = Mathf.RoundToInt(TrackHalfWidth * 2f / cell);
+            for (int x = 0; x < across; x++)
+                for (int z = 0; z < 2; z++)
+                {
+                    var q = Prim(PrimitiveType.Cube, "Cell", root, new Vector3(-TrackHalfWidth + (x + 0.5f) * cell, 0f, (z - 0.5f) * cell),
+                        new Vector3(cell, 0.01f, cell), (x + z) % 2 == 0 ? white : black);
+                    q.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+                }
         }
 
         /// <summary>Centreline of the figure 8: north up the Z straight, round the NE loop, west along the X
@@ -1243,9 +1268,14 @@ namespace CarArena.EditorTools
             impulse.ImpulseDefinition.DissipationDistance = 70f;
             root.AddComponent<CrashImpulse>().damage = damage;
 
+            BuildGun(root, vis, player, controller, health);
+            if (player) root.AddComponent<CarBoost>();
+
             if (player)
             {
                 var camCtl = head.AddComponent<CarCamera>();
+                camCtl.vcam = head.GetComponent<CinemachineCamera>();
+                root.AddComponent<SpeedEffects>().driverCamera = camCtl;
                 camCtl.car = controller;
                 camCtl.input = input;
                 camCtl.damage = damage;
@@ -1773,6 +1803,85 @@ namespace CarArena.EditorTools
             return vis;
         }
 
+        /// <summary>
+        /// Twin-barrel machine gun bolted to the rear right of the hood (visible from the driver's seat), with
+        /// a tracer line, muzzle flash light and hit sparks for CarGun.
+        /// </summary>
+        static void BuildGun(GameObject root, CarVisuals vis, bool player, CarController controller, CarHealth health)
+        {
+            var body = vis.bodyRoot;
+            var gunMetal = Mat("GunMetal", new Color(0.12f, 0.12f, 0.13f), 0.55f, 0.8f);
+            var mount = Empty("Gun", body, new Vector3(0.38f, 0.9f, 0.95f)).transform;
+            Prim(PrimitiveType.Cube, "Base", mount, new Vector3(0f, 0.02f, 0f), new Vector3(0.22f, 0.06f, 0.3f), mArmour);
+            Prim(PrimitiveType.Cube, "Receiver", mount, new Vector3(0f, 0.09f, 0.08f), new Vector3(0.16f, 0.1f, 0.34f), gunMetal);
+            foreach (float x in new[] { -0.045f, 0.045f })
+                Prim(PrimitiveType.Cylinder, "Barrel", mount, new Vector3(x, 0.1f, 0.5f), new Vector3(0.04f, 0.3f, 0.04f), gunMetal, false, Quaternion.Euler(90f, 0f, 0f));
+            Prim(PrimitiveType.Cube, "AmmoBox", mount, new Vector3(-0.12f, 0.07f, 0.02f), new Vector3(0.09f, 0.1f, 0.16f), Mat("GarageRedPaint", new Color(0.62f, 0.08f, 0.06f), 0.45f, 0.2f));
+            var muzzle = Empty("Muzzle", mount, new Vector3(0f, 0.1f, 0.82f)).transform;
+
+            var flashMat = GlowMat("MuzzleFlash", new Color(1f, 0.85f, 0.4f), new Color(4f, 2.6f, 0.8f), false);
+            var flash = Prim(PrimitiveType.Sphere, "Flash", muzzle, new Vector3(0f, 0f, 0.06f), new Vector3(0.14f, 0.14f, 0.22f), flashMat);
+            flash.GetComponent<MeshRenderer>().shadowCastingMode = ShadowCastingMode.Off;
+            var light = Empty("FlashLight", muzzle, new Vector3(0f, 0f, 0.15f)).AddComponent<Light>();
+            light.type = LightType.Point;
+            light.range = 7f;
+            light.intensity = 3f;
+            light.color = new Color(1f, 0.75f, 0.4f);
+            light.shadows = LightShadows.None;
+
+            string tracerPath = MatDir + "/Tracer.mat";
+            var tracerMat = AssetDatabase.LoadAssetAtPath<Material>(tracerPath);
+            if (tracerMat == null)
+            {
+                tracerMat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                AssetDatabase.CreateAsset(tracerMat, tracerPath);
+            }
+            tracerMat.SetColor("_BaseColor", new Color(1f, 0.85f, 0.45f));
+            EditorUtility.SetDirty(tracerMat);
+            var tracerGo = Empty("Tracer", root.transform, Vector3.zero);
+            var lr = tracerGo.AddComponent<LineRenderer>();
+            lr.useWorldSpace = true;
+            lr.positionCount = 2;
+            lr.sharedMaterial = tracerMat;
+            lr.startWidth = 0.035f;
+            lr.endWidth = 0.012f;
+            lr.shadowCastingMode = ShadowCastingMode.Off;
+            lr.receiveShadows = false;
+
+            var sparkGo = Empty("HitSparks", root.transform, Vector3.zero);
+            var ps = sparkGo.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main;
+            main.loop = false;
+            main.playOnAwake = false;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.15f, 0.35f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(2.5f, 7f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.04f, 0.09f);
+            main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.85f, 0.4f), new Color(1f, 0.5f, 0.15f));
+            main.gravityModifier = 1.2f;
+            main.maxParticles = 200;
+            var emission = ps.emission;
+            emission.rateOverTime = 0f;
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Cone;
+            shape.angle = 35f;
+            shape.radius = 0.02f;
+            var pr = sparkGo.GetComponent<ParticleSystemRenderer>();
+            pr.sharedMaterial = GraphicsSettings.currentRenderPipeline != null ? GraphicsSettings.currentRenderPipeline.defaultParticleMaterial : null;
+            pr.shadowCastingMode = ShadowCastingMode.Off;
+
+            var gun = root.AddComponent<CarGun>();
+            gun.car = controller;
+            gun.health = health;
+            gun.muzzle = muzzle;
+            gun.playerControlled = player;
+            gun.tracer = lr;
+            gun.flash = light;
+            gun.flashRenderer = flash.GetComponent<MeshRenderer>();
+            gun.sparks = ps;
+        }
+
         /// <summary>Swap the Racer's livery: main paint and stripe colours (enemy cars).</summary>
         static void Repaint(GameObject body, Material paint, Material stripe)
         {
@@ -2007,6 +2116,7 @@ namespace CarArena.EditorTools
             var overlay = go.AddComponent<MatchSummaryUI>();
             var tabletUI = go.AddComponent<TabletUI>();
             var campaign = go.AddComponent<CampaignDirector>();
+            go.AddComponent<PauseMenu>().campaign = campaign;
             var arm = BuildTabletArm(playerCar, playerGate);
             tabletUI.campaign = campaign;
             tabletUI.arm = arm;
@@ -2022,6 +2132,8 @@ namespace CarArena.EditorTools
             tabletUI.iconTyres = ArenaArt.IconTyres();
             tabletUI.iconRam = ArenaArt.IconRam();
             tabletUI.iconLaurel = ArenaArt.IconLaurel();
+            tabletUI.iconBoost = ArenaArt.IconBoost();
+            tabletUI.iconGun = ArenaArt.IconGun();
 
             campaign.settings = settings;
             campaign.player = playerCar.GetComponent<CarController>();
@@ -2081,6 +2193,50 @@ namespace CarArena.EditorTools
             }
             EditorUtility.SetDirty(m);
             return m;
+        }
+
+        /// <summary>Race mode: grid, laps and positions on the figure-8 (RaceDirector), hooked into the campaign.</summary>
+        static void BuildRace(ArenaDirector director, GameObject playerCar)
+        {
+            var go = new GameObject("RaceDirector");
+            var race = go.AddComponent<RaceDirector>();
+            race.track = Object.FindAnyObjectByType<RaceTrack>();
+            race.arena = director;
+            race.player = playerCar.GetComponent<CarController>();
+            race.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
+            race.laps = 3;
+            race.checkpointMarkers = BuildCheckpointGates(race.track);
+            var campaign = Object.FindAnyObjectByType<CampaignDirector>();
+            if (campaign != null) campaign.race = race;
+        }
+
+        /// <summary>An arch over the road at every checkpoint (and the finish line); the banner is what lights up.
+        /// No colliders: the gates are markers, not obstacles.</summary>
+        static Renderer[] BuildCheckpointGates(RaceTrack track)
+        {
+            if (track == null) return new Renderer[0];
+            track.Build();
+            var postMat = Mat("GatePost", new Color(0.16f, 0.16f, 0.18f), 0.35f, 0.4f);
+            var bannerMat = GlowMat("GateBanner", new Color(0.35f, 0.35f, 0.38f), Color.black, false);
+            var stripeMat = Mat("GateStripe", new Color(0.95f, 0.8f, 0.15f), 0.2f);
+            var root = Empty("CheckpointGates", track.transform, Vector3.zero, Quaternion.identity).transform;
+            int n = track.CheckpointCount;
+            var banners = new Renderer[n];
+            float half = track.halfWidth + 1.2f, h = 4.6f;
+            for (int k = 0; k < n; k++)
+            {
+                var pose = track.CheckpointPose(k);
+                var g = Empty(k == 0 ? "FinishArch" : $"Checkpoint{k}", root, pose.position, pose.rotation).transform;
+                foreach (float side in new[] { -1f, 1f })
+                {
+                    Prim(PrimitiveType.Cube, "Post", g, new Vector3(side * half, h * 0.5f, 0f), new Vector3(0.45f, h, 0.45f), postMat);
+                    Prim(PrimitiveType.Cube, "Stripe", g, new Vector3(side * half, 0.9f, 0f), new Vector3(0.5f, 0.35f, 0.5f), stripeMat);
+                }
+                Prim(PrimitiveType.Cube, "Beam", g, new Vector3(0f, h + 0.15f, 0f), new Vector3(2f * half + 0.45f, 0.3f, 0.45f), postMat);
+                var banner = Prim(PrimitiveType.Cube, "Banner", g, new Vector3(0f, h - 0.45f, 0f), new Vector3(2f * half - 0.6f, 0.6f, 0.12f), bannerMat);
+                banners[k] = banner.GetComponent<MeshRenderer>();
+            }
+            return banners;
         }
 
         static void BuildObjectives(ArenaDirector director)
@@ -2213,6 +2369,15 @@ namespace CarArena.EditorTools
                 AssetDatabase.CreateAsset(s, path);
             }
             s.enemyPrefabs = enemyPrefabs; // always point at the freshly built prefabs
+            // Boost and gun tracks were added later: append them to existing settings assets.
+            var tracks = new System.Collections.Generic.List<UpgradeTrack>(s.upgrades ?? new UpgradeTrack[0]);
+            if (s.Track(UpgradeType.Boost) == null)
+                tracks.Add(new UpgradeTrack { type = UpgradeType.Boost, displayName = "Boost tank",
+                    levelText = new[] { "Lasts +20%, refills +30%", "Lasts +45%, refills +60%", "Lasts +80%, refills x2" }, costs = new[] { 120, 250, 400 } });
+            if (s.Track(UpgradeType.Gun) == null)
+                tracks.Add(new UpgradeTrack { type = UpgradeType.Gun, displayName = "Machine gun",
+                    levelText = new[] { "+20% damage, +25% ammo", "+40% damage, +50% ammo", "+65% damage, +80% ammo" }, costs = new[] { 120, 250, 400 } });
+            s.upgrades = tracks.ToArray();
             if (s.championNumber < 10) s.championNumber = 10; // numbers are two digits now
             if (s.giftMoney == new Vector2Int(20, 45)) s.giftMoney = new Vector2Int(10, 20); // gifts are a bonus, fights pay
             EditorUtility.SetDirty(s);

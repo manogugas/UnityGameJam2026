@@ -11,6 +11,9 @@ namespace CarArena
     /// Before each match the emperor marks one participant's number (you or an enemy): every car hunts the
     /// marked one. Wrecking a marked enemy pays triple; if you're marked and survive, the match pays double.
     /// Enemy numbers are bounties: higher = tougher, pays more. Emperor's gifts picked up in the match add cash.
+    /// Each event can be run as a RACE (3 laps of the figure-8 from a grid start; win = 1st place, 2nd/3rd pay
+    /// part of the purse and you go again) or an ARENA fight (last car standing). Wrecking every rival wins
+    /// either way; being wrecked resets the run to the snapshot taken when you drove out.
     /// </summary>
     public class CampaignDirector : MonoBehaviour
     {
@@ -26,6 +29,9 @@ namespace CarArena
         public MatchSummaryUI overlay;
         public ArenaGate playerGate;
         public ArenaCrowd crowd;
+        public RaceDirector race;
+        [Tooltip("Share of the win reward paid for 2nd, 3rd... place in a race.")]
+        public float[] placePurse = { 0.5f, 0.25f };
 
         public Phase CurrentPhase { get; private set; } = Phase.Start;
         public RunState Run => run;
@@ -35,6 +41,11 @@ namespace CarArena
         public bool PlayerMarked => run != null && run.HasNumber && run.markedNumber == run.carNumber;
         public float PlayerHealth => health != null ? health.Health : 0f;
         public float PlayerMaxHealth => health != null ? health.maxHealth : 0f;
+        /// <summary>Arena fights unlock once the race championship (the ladder's final race) has been won.</summary>
+        public bool ArenaUnlocked => run != null && run.championBeaten;
+
+        /// <summary>The event in progress (or about to start) is a race rather than an arena fight.</summary>
+        public bool RaceMode { get; private set; }
 
         RunState run, snapshot;
         readonly List<EnemySpec> nextEnemies = new List<EnemySpec>();
@@ -74,6 +85,8 @@ namespace CarArena
             arena.MatchCleared += OnMatchCleared;
             if (objectives == null) objectives = FindAnyObjectByType<ArenaObjectives>();
             if (objectives != null) objectives.GiftCollected += OnGiftCollected;
+            if (race == null) race = FindAnyObjectByType<RaceDirector>();
+            if (race != null) race.PlayerFinished += OnRaceFinished;
 
             ParkInGarage();
             EnterTabletMode();
@@ -158,9 +171,25 @@ namespace CarArena
             return true;
         }
 
-        public void StartMatch()
+        public void StartRace() => StartMatch(true);
+
+        /// <summary>Pause menu: give up the event. The run resets to before it (like being wrecked).</summary>
+        public void Retire()
+        {
+            if (CurrentPhase != Phase.Match && CurrentPhase != Phase.DrivingOut) return;
+            CurrentPhase = Phase.Result;
+            StopAllCoroutines();
+            StartCoroutine(BackToGarage(true));
+        }
+
+        public void StartMatch() => StartMatch(false);
+
+        public void StartMatch(bool raceMode)
         {
             if (CurrentPhase != Phase.Garage) return;
+            if (raceMode && race == null) raceMode = false;
+            if (!raceMode && !ArenaUnlocked) return; // arena is the post-championship mode
+            RaceMode = raceMode;
             snapshot = run.Clone();
             snapshot.health = health.Health;
             CurrentPhase = Phase.DrivingOut;
@@ -172,9 +201,63 @@ namespace CarArena
             health.marked = marked;
             plates.SetMarked(marked);
 
+            if (raceMode) { StartCoroutine(RaceOut()); return; }
             bool full = !sessionIntroPlayed;
             sessionIntroPlayed = true;
             StartCoroutine(DriveOut(full));
+        }
+
+        /// <summary>Race: fade out of the garage straight onto the grid, then the countdown.</summary>
+        IEnumerator RaceOut()
+        {
+            for (float t = 0f; !tablet.Stowed && t < 3f; t += Time.deltaTime) yield return null;
+            yield return overlay.FadeTo(1f, 0.5f);
+            ResetMatchTally();
+            race.Setup(nextEnemies);
+            if (hud != null) hud.enabled = true;
+            if (combatHud != null) combatHud.enabled = true;
+            if (crowd != null) crowd.SetCabin(true);
+            CurrentPhase = Phase.Match;
+            yield return new WaitForSeconds(0.2f);
+            yield return overlay.FadeTo(0f, 0.5f);
+            string who = PlayerMarked
+                ? "YOU. Every car is coming for you  -  finish first for x" + settings.markedSurvivalMultiplier.ToString("0.#") + " pay"
+                : $"{MarkedName()}  -  wreck it for x{settings.markedBountyMultiplier:0.#} bounty";
+            overlay.Announce($"THE EMPEROR MARKS #{CarNumberPlates.Format(run.markedNumber)}", who, 3f);
+            race.Begin();
+        }
+
+        void ResetMatchTally()
+        {
+            matchKills.Clear();
+            matchGifts = 0;
+            giftCount = 0;
+        }
+
+        void OnRaceFinished(int place, float time)
+        {
+            if (CurrentPhase != Phase.Match || !RaceMode || health.IsDead) return;
+            CurrentPhase = Phase.Result;
+            StartCoroutine(place == 1 ? Victory() : RacePlaced(place, time));
+        }
+
+        /// <summary>Finished but not first: part of the purse plus bounties, same race again (no reset).</summary>
+        IEnumerator RacePlaced(int place, float time)
+        {
+            yield return new WaitForSeconds(1.5f);
+            var lines = new List<(string, string)>();
+            float share = place - 2 < placePurse.Length ? placePurse[place - 2] : 0f;
+            int purse = Mathf.RoundToInt(settings.WinReward(run.matchIndex) * share);
+            lines.Add(($"{RaceDirector.Place(place)} place  ({RaceDirector.FormatTime(time)})", $"${purse}"));
+            int sum = purse;
+            foreach (var (name, reward) in matchKills) { lines.Add(($"Kill: {name}", $"${reward}")); sum += reward; }
+            if (matchGifts > 0) { lines.Add(("Emperor's gifts", $"${matchGifts}")); sum += matchGifts; }
+            run.money += sum;
+            run.kills += matchKills.Count;
+            run.health = health.Health;
+            run.Save();
+            overlay.ShowVictory($"{RaceDirector.Place(place).ToUpper()} PLACE", "Only a win moves you up the ladder  -  race again",
+                lines, $"${sum}", $"Bank: ${run.money}", () => StartCoroutine(BackToGarage(false)));
         }
 
         /// <summary>Let the workshop arm fold the tablet away before the car rolls (it's right in front).</summary>
@@ -189,9 +272,7 @@ namespace CarArena
         void BeginMatch()
         {
             CurrentPhase = Phase.Match;
-            matchKills.Clear();
-            matchGifts = 0;
-            giftCount = 0;
+            ResetMatchTally();
             arena.StartMatch(nextEnemies);
             string who = PlayerMarked
                 ? $"YOU. Every car is coming for you  -  survive for x{settings.markedSurvivalMultiplier:0.#} pay"
@@ -238,7 +319,9 @@ namespace CarArena
             yield return new WaitForSeconds(1.5f);
             var lines = new List<(string, string)>();
             int win = settings.WinReward(run.matchIndex);
-            lines.Add(($"Victory: {NextMatch.name}", $"${win}"));
+            bool wonRace = RaceMode && race != null && race.PlayerEntry != null && race.PlayerEntry.finished;
+            string how = wonRace ? $"1st place ({RaceDirector.FormatTime(race.PlayerEntry.finishTime)})" : RaceMode ? "Last car running" : "Victory";
+            lines.Add(($"{how}: {NextMatch.name}", $"${win}"));
             int sum = win;
             foreach (var (name, reward) in matchKills)
             {
@@ -268,7 +351,7 @@ namespace CarArena
             run.Save();
 
             string title = champion ? "CHAMPION!" : "VICTORY";
-            string subtitle = champion ? "The crowd chants your number. Endless mode unlocked." : NextMatch.name;
+            string subtitle = champion ? "The crowd chants your number. ARENA fights and endless mode unlocked." : NextMatch.name;
             overlay.ShowVictory(title, subtitle, lines, $"${total}", $"Bank: ${run.money}", () => StartCoroutine(BackToGarage(false)));
         }
 
@@ -290,6 +373,7 @@ namespace CarArena
         {
             yield return overlay.FadeTo(1f, 0.6f);
             overlay.ClearAll();
+            if (race != null) race.Stop();
             arena.ClearArena();
             if (retry)
             {
@@ -309,6 +393,8 @@ namespace CarArena
         void EnterGarage()
         {
             CurrentPhase = Phase.Garage;
+            var gun = player.GetComponent<CarGun>();
+            if (gun != null) gun.Reload();
             ParkInGarage();
             PrepareNextMatch();
             run.health = health.Health;
@@ -396,7 +482,8 @@ namespace CarArena
         void ApplyUpgrades(RunState r)
         {
             if (upgrades == null) return;
-            upgrades.Apply(r.Level(UpgradeType.Armour), r.Level(UpgradeType.Engine), r.Level(UpgradeType.Tyres), r.Level(UpgradeType.RamPlate));
+            upgrades.Apply(r.Level(UpgradeType.Armour), r.Level(UpgradeType.Engine), r.Level(UpgradeType.Tyres), r.Level(UpgradeType.RamPlate),
+                r.Level(UpgradeType.Boost), r.Level(UpgradeType.Gun));
         }
 
         static void SetCursor(bool visible)

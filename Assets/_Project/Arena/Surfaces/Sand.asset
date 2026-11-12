@@ -13,8 +13,8 @@ MonoBehaviour:
   m_Name: Sand
   m_EditorClassIdentifier: Assembly-CSharp::CarArena.SurfaceProfile
   displayName: Sand
-  grip: 0.85
-  slideGrip: 0.92
+  grip: 1.02
+  slideGrip: 0.95
   peakSlipRatio: 0.16
   peakSlipAngle: 11
   rollingResistance: 0.06

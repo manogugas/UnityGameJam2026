@@ -93,3 +93,17 @@ MonoBehaviour:
     - 'Ram: -38% taken, +30% dealt'
     - 'Ram: -55% taken, +50% dealt'
     costs: 960000002c010000f4010000i
+  - type: 4
+    displayName: Boost tank
+    levelText:
+    - Lasts +20%, refills +30%
+    - Lasts +45%, refills +60%
+    - Lasts +80%, refills x2
+    costs: 78000000fa00000090010000i
+  - type: 5
+    displayName: Machine gun
+    levelText:
+    - +20% damage, +25% ammo
+    - +40% damage, +50% ammo
+    - +65% damage, +80% ammo
+    costs: 78000000fa00000090010000i

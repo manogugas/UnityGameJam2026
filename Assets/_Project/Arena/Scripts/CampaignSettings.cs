@@ -4,7 +4,7 @@ using UnityEngine;
 namespace CarArena
 {
     public enum EnemyType { Rammer, Flanker, Bruiser, Champion }
-    public enum UpgradeType { Armour, Engine, Tyres, RamPlate }
+    public enum UpgradeType { Armour, Engine, Tyres, RamPlate, Boost, Gun }
 
     [Serializable]
     public class MatchDefinition

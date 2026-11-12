@@ -110,7 +110,7 @@ namespace CarArena
             lastClip = pick;
             // Bigger hits: louder and slightly lower (heavier); small knocks: quieter and higher.
             crashSource.pitch = Mathf.Lerp(1.12f, 0.9f, i.severity) * Random.Range(0.96f, 1.04f);
-            crashSource.PlayOneShot(crashClips[pick], Mathf.Lerp(0.25f, 1f, i.severity) * crashVolume * masterGain);
+            crashSource.PlayOneShot(crashClips[pick], Mathf.Lerp(0.25f, 1f, i.severity) * crashVolume * masterGain * GameSettings.Effects);
         }
 
         void Update()
@@ -210,9 +210,11 @@ namespace CarArena
                 steamLp += (steamHp - steamLp) * 0.5f;
                 float steamS = steamSmooth > 0.001f ? steamLp * steamSmooth * 0.18f : 0f;
 
-                float fx = squealS + gravelS + impactS + steamS;
-                float sl = Mathf.Clamp((engL + fx) * volume * gL, -1f, 1f);
-                float sr = Mathf.Clamp((engR + fx) * volume * gR, -1f, 1f);
+                // Player settings: engine and effects (tyres, gravel, crashes, steam) have their own volumes.
+                float fx = (squealS + gravelS + impactS + steamS) * GameSettings.Effects;
+                float eng = GameSettings.Engine;
+                float sl = Mathf.Clamp((engL * eng + fx) * volume * gL, -1f, 1f);
+                float sr = Mathf.Clamp((engR * eng + fx) * volume * gR, -1f, 1f);
                 if (channels == 1) data[i] = (sl + sr) * 0.5f;
                 else
                 {

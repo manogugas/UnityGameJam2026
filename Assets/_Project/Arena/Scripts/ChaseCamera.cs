@@ -45,6 +45,7 @@ namespace CarArena
         public float collisionRadius = 0.35f;
 
         public bool Live { get; private set; }
+        float chaseBoost, liveFov = -1f;
 
         float heading, lookYaw, lookVel;
         Vector3 smoothPos;
@@ -102,7 +103,11 @@ namespace CarArena
             transform.position = pos;
             transform.rotation = Quaternion.LookRotation(pivot + rot * Vector3.forward * 4f - pos, Vector3.up);
             var lens = vcam.Lens;
-            lens.FieldOfView = fov;
+            float k = Mathf.Clamp01(Mathf.InverseLerp(10f, 38f, speed));
+            chaseBoost = Mathf.MoveTowards(chaseBoost, car.Boosting ? 1f : 0f, dt / (car.Boosting ? 1.1f : 1.3f));
+            float targetFov = fov + (16f * Mathf.Pow(k, 1.3f) + 6f * chaseBoost * chaseBoost * (3f - 2f * chaseBoost)) * GameSettings.SpeedEffects;
+            liveFov = liveFov < 0f ? targetFov : Mathf.Lerp(liveFov, targetFov, 1f - Mathf.Exp(-1.5f * dt));
+            lens.FieldOfView = liveFov;
             vcam.Lens = lens;
         }
 

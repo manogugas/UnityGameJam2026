@@ -111,7 +111,7 @@ namespace CarArena
 
         void ApplyMix(float e)
         {
-            float vol = Mathf.Lerp(1f, cabinVolume, cabin);
+            float vol = Mathf.Lerp(1f, cabinVolume, cabin) * GameSettings.Crowd;
             float cutoff = Mathf.Lerp(22000f, cabinCutoff, Mathf.Sqrt(cabin));
             if (crowdSource != null)
             {
@@ -236,7 +236,7 @@ namespace CarArena
             var synth = crowdSynth;
             if (synth == null || !useSynth) return;
             synth.excitement = roar;
-            float vol = volume;
+            float vol = volume * GameSettings.Crowd;
             for (int i = 0; i < data.Length; i += channels)
             {
                 synth.Render(out float l, out float r);

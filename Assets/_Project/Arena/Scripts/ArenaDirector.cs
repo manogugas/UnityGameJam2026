@@ -162,11 +162,31 @@ namespace CarArena
             return best;
         }
 
-        IEnumerator Admit(ArenaGate gate, EnemySpec spec)
+        /// <summary>
+        /// Race start: put these enemies straight onto the grid (no gates), held with the brakes on.
+        /// Match rules still apply: wreck them all and MatchCleared fires.
+        /// </summary>
+        public List<CarHealth> StartMatchOnGrid(IList<EnemySpec> specs, IList<Pose> slots)
         {
-            admitting++;
-            gate.Busy = true;
-            var go = Instantiate(spec.prefab, gate.spawnPoint.position, gate.spawnPoint.rotation);
+            matchMode = true;
+            matchRunning = true;
+            spawning = false;
+            pending = 0;
+            queue.Clear();
+            var spawned = new List<CarHealth>();
+            for (int i = 0; i < specs.Count && i < slots.Count; i++)
+            {
+                var go = SpawnEnemy(specs[i], slots[i].position, slots[i].rotation);
+                var h = go.GetComponent<CarHealth>();
+                if (h != null) spawned.Add(h);
+            }
+            return spawned;
+        }
+
+        /// <summary>Instantiate and set up one enemy car (number, stats, mark, crowd, kill tracking), held still.</summary>
+        GameObject SpawnEnemy(EnemySpec spec, Vector3 position, Quaternion rotation)
+        {
+            var go = Instantiate(spec.prefab, position, rotation);
             var driver = go.GetComponent<AICarDriver>();
             if (driver != null)
             {
@@ -195,6 +215,15 @@ namespace CarArena
             }
             RebuildCombatants();
             if (health != null) CombatantAdded?.Invoke(health);
+            return go;
+        }
+
+        IEnumerator Admit(ArenaGate gate, EnemySpec spec)
+        {
+            admitting++;
+            gate.Busy = true;
+            var go = SpawnEnemy(spec, gate.spawnPoint.position, gate.spawnPoint.rotation);
+            var driver = go.GetComponent<AICarDriver>();
 
             gate.Open();
             float t = 0f;

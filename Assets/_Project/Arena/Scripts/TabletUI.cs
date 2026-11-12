@@ -15,7 +15,7 @@ namespace CarArena
     ///  - Start: continue / new run.   - Number picker.
     ///  - Garage, WORKSHOP tab: live camera feed of your car, stat bars, and a row of cards to repair and
     ///    buy upgrades.  NEXT MATCH tab: opponents and bounties, the emperor's mark, rewards, run stats.
-    ///  ENTER THE ARENA is always in the same spot. The screen boots up once the arm has arrived and
+    ///  RACE / ARENA (how to run the next event) are always in the same spot. The screen boots up once the arm has arrived and
     ///  blanks when it folds away; purchases flash the card and pulse the money.
     /// </summary>
     public class TabletUI : MonoBehaviour
@@ -39,6 +39,8 @@ namespace CarArena
         public Sprite iconEngine;
         public Sprite iconTyres;
         public Sprite iconRam;
+        public Sprite iconBoost;
+        public Sprite iconGun;
         public Sprite iconLaurel;
 
         [Header("Colours")]
@@ -74,8 +76,10 @@ namespace CarArena
         TextMeshProUGUI startInfo, pickNumber;
         TextMeshProUGUI header, money, numberBadge, hullText, matchList, markText, rewardText, runText;
         Image hullFill, tabWorkshopBar, tabMatchBar;
-        Image[] statFills = new Image[4];
-        TextMeshProUGUI[] statValues = new TextMeshProUGUI[4];
+        static readonly UpgradeType[] UpgradeOrder =
+            { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate, UpgradeType.Boost, UpgradeType.Gun };
+        Image[] statFills = new Image[6];
+        TextMeshProUGUI[] statValues = new TextMeshProUGUI[6];
         RawImage carView;
         Button patchButton, fullButton;
         TextMeshProUGUI patchLabel, fullLabel;
@@ -84,6 +88,8 @@ namespace CarArena
         int pickValue = 42;
         float moneyPulse;
         Tab tab = Tab.Workshop;
+        Button arenaButton;
+        TextMeshProUGUI arenaLabel;
         float baseFov = -1f;
 
         void Awake()
@@ -144,12 +150,9 @@ namespace CarArena
         {
             float p = arm != null ? arm.Progress : (Visible ? 1f : 0f);
             float k = p * p * (3f - 2f * p);
-            if (driverCam != null && baseFov > 0f)
-            {
-                var lens = driverCam.Lens;
-                lens.FieldOfView = Mathf.Lerp(baseFov, focusFov, k);
-                driverCam.Lens = lens;
-            }
+            // FOV belongs to CarCamera (speed feel); only lean in with a pitch change.
+            if (driverHead != null && baseFov > 0f && !Mathf.Approximately(focusFov, baseFov))
+                driverHead.baseFov = Mathf.Lerp(baseFov, focusFov, k);
             if (driverHead != null) driverHead.pitchOffset = focusPitch * k;
         }
 
@@ -221,7 +224,7 @@ namespace CarArena
             money.text = $"${run.money}";
             numberBadge.text = $"#{CarNumberPlates.Format(run.carNumber)}";
 
-            UpgradeType[] order = { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate };
+            UpgradeType[] order = UpgradeOrder;
             for (int i = 0; i < order.Length; i++)
             {
                 var track = settings.Track(order[i]);
@@ -248,6 +251,11 @@ namespace CarArena
                 c.price.text = cost < 0 ? "MAX" : $"${cost}";
                 c.price.color = cost < 0 ? muted : affordable ? Color.black : bad;
             }
+
+            bool arenaOpen = campaign.ArenaUnlocked;
+            arenaButton.interactable = arenaOpen;
+            arenaLabel.text = arenaOpen ? "ARENA" : "ARENA\n<size=80%>LOCKED</size>";
+            arenaLabel.fontSize = arenaOpen ? 26 : 22;
 
             var sb = new StringBuilder();
             foreach (var e in campaign.NextEnemies)
@@ -280,8 +288,8 @@ namespace CarArena
             int patch = campaign.RepairCost(false), full = campaign.RepairCost(true);
             patchButton.interactable = damaged && campaign.Run.money >= patch;
             fullButton.interactable = damaged && campaign.Run.money >= full;
-            patchLabel.text = damaged ? $"PATCH +{campaign.settings.patchAmount}   ${patch}" : "PATCH";
-            fullLabel.text = damaged ? $"FULL   ${full}" : "HULL OK";
+            patchLabel.text = damaged ? $"PATCH +{campaign.settings.patchAmount}\n${patch}" : "PATCH";
+            fullLabel.text = damaged ? $"FULL\n${full}" : "HULL OK";
         }
 
         void Buy(Card c)
@@ -332,7 +340,18 @@ namespace CarArena
             startInfo = Text(s, "", 30, TextAlignmentOptions.Center, new Vector2(0.05f, 0.4f), new Vector2(0.95f, 0.48f), muted);
             Btn(s, "CONTINUE", new Vector2(0.24f, 0.2f), new Vector2(0.49f, 0.34f), () => campaign.ContinueRun(), gold, Color.black);
             Btn(s, "NEW RUN", new Vector2(0.51f, 0.2f), new Vector2(0.76f, 0.34f), () => campaign.NewRun(), panelLight, Color.white, true);
-            Text(s, "click to select", 22, TextAlignmentOptions.Center, new Vector2(0.05f, 0.06f), new Vector2(0.95f, 0.12f), muted);
+            Btn(s, "SETTINGS", new Vector2(0.33f, 0.05f), new Vector2(0.49f, 0.15f), () =>
+            {
+                var menu = FindAnyObjectByType<PauseMenu>();
+                if (menu != null) menu.ShowSettings();
+            }, panelLight, muted, true);
+            Btn(s, "QUIT", new Vector2(0.51f, 0.05f), new Vector2(0.67f, 0.15f), () =>
+            {
+                Application.Quit();
+#if UNITY_EDITOR
+                UnityEditor.EditorApplication.isPlaying = false;
+#endif
+            }, panelLight, muted, true);
         }
 
         void BuildPicker(Transform c)
@@ -383,7 +402,11 @@ namespace CarArena
             BuildMatch(g);
 
             // Always in the same place on both tabs.
-            var fight = Btn(g, "ENTER THE ARENA  >", new Vector2(0.69f, 0.36f), new Vector2(0.98f, 0.46f), () => campaign.StartMatch(), gold, Color.black);
+            // Two ways to run the next event: a race (primary) or an arena fight.
+            var fight = Btn(g, "RACE  >", new Vector2(0.69f, 0.36f), new Vector2(0.86f, 0.46f), () => campaign.StartRace(), gold, Color.black);
+            arenaButton = Btn(g, "ARENA", new Vector2(0.87f, 0.36f), new Vector2(0.98f, 0.46f), () => campaign.StartMatch(), panelLight, Color.white, true);
+            arenaLabel = arenaButton.GetComponentInChildren<TextMeshProUGUI>();
+            arenaLabel.fontSize = 26;
             fight.GetComponentInChildren<TextMeshProUGUI>().fontSize = 34;
         }
 
@@ -421,24 +444,24 @@ namespace CarArena
             hullText.fontStyle = FontStyles.Bold;
             var hullBack = Panel(st, "HullBack", new Vector2(0.06f, 0.73f), new Vector2(0.94f, 0.81f), panelLight);
             hullFill = Panel(hullBack.transform, "Fill", Vector2.zero, Vector2.one, good);
-            string[] names = { "ARMOUR", "ENGINE", "TYRES", "RAM" };
-            for (int i = 0; i < 4; i++)
+            string[] names = { "ARMOUR", "ENGINE", "TYRES", "RAM", "BOOST", "GUN" };
+            for (int i = 0; i < names.Length; i++)
             {
-                float top = 0.64f - i * 0.155f;
-                Text(st, names[i], 24, TextAlignmentOptions.Left, new Vector2(0.06f, top - 0.07f), new Vector2(0.5f, top), muted).fontStyle = FontStyles.Bold;
-                statValues[i] = Text(st, "", 24, TextAlignmentOptions.Right, new Vector2(0.5f, top - 0.07f), new Vector2(0.94f, top), cyan);
-                var back = Panel(st, "Back", new Vector2(0.06f, top - 0.115f), new Vector2(0.94f, top - 0.075f), panelLight);
+                float top = 0.67f - i * 0.107f;
+                Text(st, names[i], 20, TextAlignmentOptions.Left, new Vector2(0.06f, top - 0.06f), new Vector2(0.5f, top), muted).fontStyle = FontStyles.Bold;
+                statValues[i] = Text(st, "", 20, TextAlignmentOptions.Right, new Vector2(0.5f, top - 0.06f), new Vector2(0.94f, top), cyan);
+                var back = Panel(st, "Back", new Vector2(0.06f, top - 0.092f), new Vector2(0.94f, top - 0.064f), panelLight);
                 statFills[i] = Panel(back.transform, "Fill", Vector2.zero, Vector2.one, cyan);
             }
 
-            // Bottom row: repair + four upgrade cards
-            float x0 = 0.1f, x1 = 0.98f, gap = 0.012f;
-            float cw = (x1 - x0 - gap * 4f) / 5f;
+            // Bottom row: repair + six upgrade cards
+            float x0 = 0.1f, x1 = 0.98f, gap = 0.01f;
+            float cw = (x1 - x0 - gap * 6f) / 7f;
             RepairCard(w, new Vector2(x0, 0.03f), new Vector2(x0 + cw, 0.33f));
-            UpgradeType[] order = { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate };
-            Sprite[] icons = { iconArmour, iconEngine, iconTyres, iconRam };
-            string[] titles = { "ARMOUR", "ENGINE", "TYRES", "RAM PLATE" };
-            for (int i = 0; i < 4; i++)
+            UpgradeType[] order = UpgradeOrder;
+            Sprite[] icons = { iconArmour, iconEngine, iconTyres, iconRam, iconBoost, iconGun };
+            string[] titles = { "ARMOUR", "ENGINE", "TYRES", "RAM", "BOOST", "GUN" };
+            for (int i = 0; i < order.Length; i++)
             {
                 float a = x0 + (cw + gap) * (i + 1);
                 cards.Add(UpgradeCard(w, order[i], icons[i], titles[i], new Vector2(a, 0.03f), new Vector2(a + cw, 0.33f)));
@@ -450,13 +473,16 @@ namespace CarArena
             var back = Panel(w, "RepairCard", min, max, panel);
             AddOutline(back, line, 2f);
             var t = back.transform;
-            Icon(t, iconRepair, new Vector2(0.05f, 0.66f), new Vector2(0.32f, 0.95f), cyan);
-            Text(t, "REPAIR", 27, TextAlignmentOptions.Left, new Vector2(0.36f, 0.72f), new Vector2(0.98f, 0.93f), Color.white).fontStyle = FontStyles.Bold;
-            patchButton = Btn(t, "PATCH", new Vector2(0.06f, 0.37f), new Vector2(0.94f, 0.6f), () => DoRepair(false), panelLight, Color.white, true);
+            Icon(t, iconRepair, new Vector2(0.05f, 0.7f), new Vector2(0.36f, 0.95f), cyan);
+            var repairTitle = Text(t, "REPAIR", 24, TextAlignmentOptions.Left, new Vector2(0.39f, 0.74f), new Vector2(0.98f, 0.93f), Color.white);
+            repairTitle.fontStyle = FontStyles.Bold;
+            FitText(repairTitle, 16f, 24f);
+            patchButton = Btn(t, "PATCH", new Vector2(0.06f, 0.37f), new Vector2(0.94f, 0.62f), () => DoRepair(false), panelLight, Color.white, true);
             patchLabel = patchButton.GetComponentInChildren<TextMeshProUGUI>();
-            fullButton = Btn(t, "FULL", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.3f), () => DoRepair(true), panelLight, Color.white, true);
+            fullButton = Btn(t, "FULL", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.32f), () => DoRepair(true), panelLight, Color.white, true);
             fullLabel = fullButton.GetComponentInChildren<TextMeshProUGUI>();
-            patchLabel.fontSize = fullLabel.fontSize = 22;
+            FitText(patchLabel, 13f, 20f);
+            FitText(fullLabel, 13f, 20f);
             repairFlash = Panel(t, "Flash", Vector2.zero, Vector2.one, Color.clear);
         }
 
@@ -466,17 +492,19 @@ namespace CarArena
             card.back = Panel(w, "Card", min, max, panel);
             AddOutline(card.back, line, 2f);
             var t = card.back.transform;
-            Icon(t, icon, new Vector2(0.05f, 0.66f), new Vector2(0.32f, 0.95f), cyan);
-            card.title = Text(t, title, 27, TextAlignmentOptions.Left, new Vector2(0.36f, 0.72f), new Vector2(0.98f, 0.93f), Color.white);
+            Icon(t, icon, new Vector2(0.05f, 0.7f), new Vector2(0.36f, 0.95f), cyan);
+            card.title = Text(t, title, 24, TextAlignmentOptions.Left, new Vector2(0.39f, 0.74f), new Vector2(0.98f, 0.93f), Color.white);
             card.title.fontStyle = FontStyles.Bold;
+            FitText(card.title, 16f, 24f);
             card.pips = new Image[3];
             for (int p = 0; p < 3; p++)
-                card.pips[p] = Panel(t, "Pip", new Vector2(0.36f + p * 0.13f, 0.64f), new Vector2(0.46f + p * 0.13f, 0.69f), cyan);
-            card.detail = Text(t, "", 22, TextAlignmentOptions.TopLeft, new Vector2(0.07f, 0.33f), new Vector2(0.95f, 0.6f), muted);
+                card.pips[p] = Panel(t, "Pip", new Vector2(0.39f + p * 0.19f, 0.67f), new Vector2(0.55f + p * 0.19f, 0.71f), cyan);
+            card.detail = Text(t, "", 18, TextAlignmentOptions.TopLeft, new Vector2(0.07f, 0.34f), new Vector2(0.95f, 0.63f), muted);
+            FitText(card.detail, 12f, 18f);
             Card captured = card;
             card.buy = Btn(t, "$0", new Vector2(0.06f, 0.07f), new Vector2(0.94f, 0.3f), () => Buy(captured), gold, Color.black);
             card.price = card.buy.GetComponentInChildren<TextMeshProUGUI>();
-            card.price.fontSize = 26;
+            card.price.fontSize = 24;
             card.flash = Panel(t, "Flash", Vector2.zero, Vector2.one, Color.clear);
             return card;
         }
@@ -507,8 +535,8 @@ namespace CarArena
 
             var hint = Panel(m, "Hint", new Vector2(0.69f, 0.03f), new Vector2(0.98f, 0.33f), panel);
             AddOutline(hint, line, 2f);
-            Text(hint.transform, "Wrecks earn bounty: a higher number means a tougher car and a bigger reward. " +
-                                 "Big hits can make the emperor toss a gift into the arena.",
+            Text(hint.transform, "RACE: win to move up the ladder; 2nd and 3rd pay part of the purse. Guns are weak in races - drive. " +
+                                 "Win the championship race to unlock ARENA fights. Wrecks earn bounty: higher number, tougher car, bigger reward.",
                 20, TextAlignmentOptions.TopLeft, new Vector2(0.06f, 0.08f), new Vector2(0.94f, 0.92f), muted);
         }
 
@@ -580,6 +608,14 @@ namespace CarArena
                 Panel(parent, "BracketV", new Vector2(Mathf.Min(k.x, k.x + sx * th), Mathf.Min(k.y, k.y + sy * len * 1.6f)),
                     new Vector2(Mathf.Max(k.x, k.x + sx * th), Mathf.Max(k.y, k.y + sy * len * 1.6f)), cyan);
             }
+        }
+
+        /// <summary>Shrink text to fit its box (narrow cards).</summary>
+        static void FitText(TextMeshProUGUI t, float min, float max)
+        {
+            t.enableAutoSizing = true;
+            t.fontSizeMin = min;
+            t.fontSizeMax = max;
         }
 
         static TextMeshProUGUI Text(Transform parent, string text, float size, TextAlignmentOptions align, Vector2 min, Vector2 max, Color c)

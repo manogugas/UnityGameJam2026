@@ -56,7 +56,7 @@ namespace CarArena
 
         [Header("Steering")]
         public float maxSteerAngle = 34f;
-        public float highSpeedSteerAngle = 9f;
+        public float highSpeedSteerAngle = 12.5f;
         [Tooltip("Speed (m/s) at which steering lock reaches the high speed angle.")]
         public float steerSpeedRef = 35f;
         public float steerRate = 2.8f;

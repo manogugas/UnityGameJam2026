@@ -18,7 +18,7 @@ namespace CarArena
     [RequireComponent(typeof(CarController))]
     public class AICarDriver : MonoBehaviour
     {
-        public enum State { Hunt, Charge, Push, BackOff, Reposition, Unstuck, Idle, Wait, Entering, Objective }
+        public enum State { Hunt, Charge, Push, BackOff, Reposition, Unstuck, Idle, Wait, Entering, Objective, Race }
 
         public DriverArchetype archetype = DriverArchetype.Rammer;
         public CarController target;
@@ -49,6 +49,23 @@ namespace CarArena
         public float giftReach = 30f;
         [Tooltip("Boost pads further than this are ignored.")]
         public float padReach = 30f;
+
+        [Header("Racing")]
+        [Tooltip("Chance (per decision) to break off and ram a rival who is close by.")]
+        [Range(0f, 1f)] public float raceAggression = 0.35f;
+        [Tooltip("Rivals closer than this can be rammed mid-race.")]
+        public float raceRamRange = 13f;
+        [Tooltip("Top speed on straights (m/s).")]
+        public float raceMaxSpeed = 37f;
+        [Tooltip("Sideways grip (g) the AI plans corners with: corner speed = sqrt(g * 9.81 * radius).")]
+        public float raceCornerGrip = 1f;
+        [Tooltip("Braking the AI counts on when slowing for a corner (m/s^2).")]
+        public float raceBrakeDecel = 6f;
+
+        [Header("Gun")]
+        [Tooltip("Fires when the target is this close and within this many degrees of the nose.")]
+        public float gunRange = 45f, gunCone = 7f;
+        public float burstTime = 1.1f, burstPause = 1.6f;
 
         [Header("Steering")]
         [Tooltip("Degrees of aim error that give full steering lock.")]
@@ -83,6 +100,12 @@ namespace CarArena
         CarDamage damage;
         CarHealth lastAttacker;
         float lastAttackedTime = -100f, retargetTimer;
+        RaceTrack raceTrack;
+        bool racing;
+        int raceIndex = -1;
+        float raceLane, nextRamCheck;
+        CarGun gun;
+        float burstClock;
         Transform objective;
         ArenaObjectives Objectives => director != null ? director.objectives : null;
         ArenaLayout Layout => director != null ? director.layout : null;
@@ -97,6 +120,7 @@ namespace CarArena
             health = GetComponent<CarHealth>();
             rb = GetComponent<Rigidbody>();
             damage = GetComponent<CarDamage>();
+            gun = GetComponent<CarGun>();
             input.overrideDriving = true;
 
             personality = Random.Range(0.85f, 1.15f);
@@ -118,6 +142,28 @@ namespace CarArena
 
         /// <summary>Sit still with the brakes on (waiting behind a closed gate).</summary>
         public void Hold() => Enter(State.Wait);
+
+        /// <summary>Race mode: follow the track; ramming becomes an opportunistic detour.</summary>
+        public void StartRacing(RaceTrack track)
+        {
+            raceTrack = track;
+            raceIndex = track.GridIndex(rb.position);
+            racing = true;
+            raceLane = Random.Range(-2.2f, 2.2f);
+            Enter(State.Race);
+        }
+
+        /// <summary>Crossed the finish: cruise and stay out of trouble.</summary>
+        public void StopRacing()
+        {
+            racing = false;
+            raceTrack = null;
+            target = null;
+            targetHealth = null;
+            Enter(State.Idle);
+        }
+
+        public bool Racing => racing;
 
         /// <summary>Drive through an opened gate to a point inside the arena, then start fighting.</summary>
         public void DriveIn(Vector3 point)
@@ -186,7 +232,7 @@ namespace CarArena
         void ConsiderObjective()
         {
             var obj = Objectives;
-            if (obj == null || state == State.Objective) return;
+            if (obj == null || state == State.Objective || racing) return;
             if (state != State.Hunt && state != State.Reposition && state != State.Idle) return;
             Vector3 myPos = rb.position;
             float targetDist = target != null ? Flat(target.Body.position - myPos).magnitude : float.MaxValue;
@@ -213,6 +259,7 @@ namespace CarArena
 
         void Enter(State s)
         {
+            if (racing && (s == State.Hunt || s == State.Reposition || s == State.Idle)) s = State.Race;
             state = s;
             stateTime = 0f;
             stuckTime = 0f;
@@ -222,7 +269,7 @@ namespace CarArena
         void FixedUpdate()
         {
             float dt = Time.fixedDeltaTime;
-            if (health != null && health.IsDead) { Drive(0f, 0f, 0f); return; }
+            if (health != null && health.IsDead) { Drive(0f, 0f, 0f); if (gun != null) gun.SetTrigger(false); return; }
 
             FlipRecovery(dt);
             stateTime += dt;
@@ -234,9 +281,9 @@ namespace CarArena
                 retargetTimer = retargetInterval * personality;
             }
 
-            if (state == State.Wait) { Drive(0f, 0f, 0f); input.overrideHandbrake = true; return; }
+            if (state == State.Wait) { Drive(0f, 0f, 0f); input.overrideHandbrake = true; if (gun != null) gun.SetTrigger(false); return; }
 
-            if (state != State.Entering && (target == null || (targetHealth != null && targetHealth.IsDead)))
+            if (!racing && state != State.Entering && (target == null || (targetHealth != null && targetHealth.IsDead)))
             {
                 if (state != State.Idle && state != State.Reposition) Enter(State.Reposition);
                 if (state == State.Reposition && stateTime > 4f) Enter(State.Idle);
@@ -274,7 +321,7 @@ namespace CarArena
                     wantContact = true;
                     throttle = chargeThrottle;
                     if (dist > chargeDistance * 1.8f) Enter(State.Hunt);
-                    else if (stateTime > 6f) Enter(State.Reposition); // missed: go around and try again
+                    else if (stateTime > (racing ? 2.5f : 6f)) Enter(State.Reposition); // missed: go around and try again
                     break;
 
                 case State.Push:
@@ -313,6 +360,37 @@ namespace CarArena
                     if (Flat(objective.position - myPos).magnitude < 2f) { objective = null; Enter(target != null ? State.Hunt : State.Idle); }
                     break;
 
+                case State.Race:
+                {
+                    // Follow the centreline: look further ahead at speed, slow for what's coming.
+                    raceIndex = raceTrack.Nearest(myPos, raceIndex);
+                    float look = 7f + Mathf.Max(0f, speed) * 0.45f;
+                    Vector3 p = raceTrack.Ahead(raceIndex, look, out int ai);
+                    Vector3 tan = raceTrack.Tangent(ai);
+                    aim = p + Vector3.Cross(Vector3.up, tan) * raceLane;
+                    // Speed from the corners ahead: brake in time for each one instead of finding out mid-bend.
+                    // Personality only changes straight-line pace and a little corner commitment.
+                    float cornerG = raceCornerGrip * Mathf.Lerp(0.94f, 1.03f, Mathf.InverseLerp(0.85f, 1.15f, personality));
+                    float targetSpeed = raceTrack.SafeSpeed(raceIndex, cornerG * 9.81f, raceBrakeDecel,
+                        raceMaxSpeed * personality, Mathf.Abs(raceLane) + 1f);
+                    // Off the road (sand) there's less grip: ease off until back on the tarmac.
+                    Vector3 off = myPos - raceTrack.points[raceIndex]; off.y = 0f;
+                    if (Mathf.Abs(Vector3.Dot(off, Vector3.Cross(Vector3.up, raceTrack.Tangent(raceIndex)))) > raceTrack.halfWidth)
+                        targetSpeed *= 0.85f;
+                    float over = speed - targetSpeed;
+                    if (over < -1.5f) throttle = 1f;
+                    else if (over < 0.5f) throttle = Mathf.Lerp(1f, 0.3f, (over + 1.5f) / 2f);
+                    else { throttle = 0f; brake = Mathf.Clamp01(over * 0.3f); }
+
+                    // Opportunistic ram: a rival close by and roughly in front.
+                    if (Time.time > nextRamCheck && target != null && dist < raceRamRange && Mathf.Abs(SignedAngleTo(tPos)) < 40f)
+                    {
+                        nextRamCheck = Time.time + 2.5f;
+                        if (Random.value < raceAggression) Enter(State.Charge);
+                    }
+                    break;
+                }
+
                 case State.Idle:
                     aim = Vector3.zero;
                     throttle = Flat(myPos).magnitude > 20f ? 0.45f : 0f;
@@ -321,7 +399,7 @@ namespace CarArena
             }
 
             // Islands in the way: head for the corner that gets round them.
-            if (Layout != null && state != State.Idle) aim = Layout.Route(myPos, aim);
+            if (Layout != null && state != State.Idle && state != State.Race) aim = Layout.Route(myPos, aim);
 
             float aimAngle = SignedAngleTo(aim);
             float steer;
@@ -362,6 +440,28 @@ namespace CarArena
             }
 
             Drive(steer, throttle, brake);
+            UpdateGun(dist, tPos);
+        }
+
+        /// <summary>Short bursts at a target lined up in front; never while waiting behind a gate.</summary>
+        void UpdateGun(float dist, Vector3 targetPos)
+        {
+            if (gun == null) return;
+            // Shoot at whoever is lined up in front, not just the chosen target (in a race that's usually
+            // the car ahead).
+            bool lined = false;
+            if (state != State.Wait && state != State.Entering && director != null)
+            {
+                foreach (var c in director.Combatants)
+                {
+                    if (c == null || c == health || c.IsDead) continue;
+                    Vector3 p = c.transform.position;
+                    if (Flat(p - rb.position).magnitude < gunRange && Mathf.Abs(SignedAngleTo(p)) < gunCone) { lined = true; break; }
+                }
+            }
+            burstClock += Time.fixedDeltaTime;
+            if (burstClock > burstTime + burstPause * personality) burstClock = 0f;
+            gun.SetTrigger(lined && burstClock < burstTime);
         }
 
         void BackOff(float seconds, State then)

@@ -136,6 +136,12 @@ namespace CarArena
         public void ApplyDamage(float amount, Vector3 point, CarHealth attacker)
         {
             if (IsDead || amount <= 0f) return;
+            if (attacker != null && attacker != this)
+            {
+                // Gunfire etc. counts for the kill just like a ram.
+                lastAttacker = attacker;
+                lastAttackTime = Time.time;
+            }
             amount = Mathf.Min(amount, Health);
             Health = Mathf.Max(0f, Health - amount);
             LastDamageTime = Time.time;

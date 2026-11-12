@@ -13,8 +13,8 @@ MonoBehaviour:
   m_Name: Asphalt
   m_EditorClassIdentifier: Assembly-CSharp::CarArena.SurfaceProfile
   displayName: Asphalt
-  grip: 1.2
-  slideGrip: 0.88
+  grip: 1.45
+  slideGrip: 0.94
   peakSlipRatio: 0.1
   peakSlipAngle: 7
   rollingResistance: 0.015

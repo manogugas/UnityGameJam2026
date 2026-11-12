@@ -138,6 +138,34 @@ namespace CarArena.EditorTools
             return Union(bar, plate, spikes);
         }
 
+        /// <summary>Boost: a flame behind two forward chevrons.</summary>
+        static float BoostIcon(Vector2 p)
+        {
+            float d = float.MaxValue;
+            for (int i = 0; i < 2; i++)
+            {
+                float x = -0.25f + i * 0.45f;
+                d = Mathf.Min(d, Segment(p, new Vector2(x - 0.3f, 0.5f), new Vector2(x + 0.15f, 0f), 0.11f));
+                d = Mathf.Min(d, Segment(p, new Vector2(x - 0.3f, -0.5f), new Vector2(x + 0.15f, 0f), 0.11f));
+            }
+            // Exhaust streaks trailing off to the left.
+            d = Mathf.Min(d, Segment(p, new Vector2(-0.9f, 0.2f), new Vector2(-0.68f, 0.2f), 0.05f));
+            d = Mathf.Min(d, Segment(p, new Vector2(-0.95f, -0.2f), new Vector2(-0.68f, -0.2f), 0.05f));
+            return d;
+        }
+
+        /// <summary>Gun: crosshair ring, ticks and a centre dot.</summary>
+        static float GunIcon(Vector2 p)
+        {
+            float d = Ring(p, Vector2.zero, 0.55f, 0.07f);
+            d = Mathf.Min(d, Circle(p, Vector2.zero, 0.1f));
+            d = Mathf.Min(d, Segment(p, new Vector2(0f, 0.32f), new Vector2(0f, 0.9f), 0.06f));
+            d = Mathf.Min(d, Segment(p, new Vector2(0f, -0.32f), new Vector2(0f, -0.9f), 0.06f));
+            d = Mathf.Min(d, Segment(p, new Vector2(0.32f, 0f), new Vector2(0.9f, 0f), 0.06f));
+            d = Mathf.Min(d, Segment(p, new Vector2(-0.32f, 0f), new Vector2(-0.9f, 0f), 0.06f));
+            return d;
+        }
+
         static float Laurel(Vector2 p)
         {
             float d = float.MaxValue;
@@ -177,6 +205,8 @@ namespace CarArena.EditorTools
         public static Sprite IconArmour() => IconSprite("IconArmour", Shield);
         public static Sprite IconRam() => IconSprite("IconRam", Ram);
         public static Sprite IconLaurel() => IconSprite("IconLaurel", Laurel);
+        public static Sprite IconBoost() => IconSprite("IconBoost", BoostIcon);
+        public static Sprite IconGun() => IconSprite("IconGun", GunIcon);
 
         static Sprite IconSprite(string name, Func<Vector2, float> sdf)
         {

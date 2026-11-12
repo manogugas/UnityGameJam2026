@@ -16,7 +16,8 @@ namespace CarArena
         public int matchIndex;
         public int wins;
         public int kills;
-        public int[] upgrades = new int[4];
+        public int[] upgrades = new int[UpgradeSlots];
+        public const int UpgradeSlots = 6;
         [Tooltip("-1 = full health.")]
         public float health = -1f;
         [Tooltip("Number the emperor marked for the next match (-1 = not chosen yet).")]
@@ -50,7 +51,13 @@ namespace CarArena
             {
                 if (!File.Exists(FilePath)) return null;
                 var s = JsonUtility.FromJson<RunState>(File.ReadAllText(FilePath));
-                if (s != null && (s.upgrades == null || s.upgrades.Length != 4)) s.upgrades = new int[4];
+                if (s != null && (s.upgrades == null || s.upgrades.Length != UpgradeSlots))
+                {
+                    // Older saves had fewer upgrade tracks: keep the levels they have.
+                    var old = s.upgrades ?? new int[0];
+                    s.upgrades = new int[UpgradeSlots];
+                    Array.Copy(old, s.upgrades, Mathf.Min(old.Length, UpgradeSlots));
+                }
                 return s;
             }
             catch (Exception e)
