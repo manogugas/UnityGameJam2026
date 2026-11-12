@@ -26,12 +26,12 @@ namespace CarArena
         public int livePriority = 50;
 
         [Header("Framing")]
-        [Range(3f, 15f)] public float distance = 6.5f;
-        [Range(0.5f, 6f)] public float height = 2.2f;
+        [Range(3f, 15f)] public float distance = 5.6f;
+        [Range(0.5f, 6f)] public float height = 1.6f;
         [Range(0f, 2.5f)] public float lookHeight = 1.0f;
-        [Range(40f, 100f)] public float fov = 66f;
+        [Range(40f, 100f)] public float fov = 58f;
         [Tooltip("Extra distance per m/s of speed.")]
-        [Range(0f, 0.1f)] public float speedPullback = 0.035f;
+        [Range(0f, 0.1f)] public float speedPullback = 0.002f;
 
         [Header("Smoothing")]
         [Tooltip("How quickly the camera swings round behind the car (higher = stiffer).")]

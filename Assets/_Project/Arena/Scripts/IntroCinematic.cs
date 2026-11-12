@@ -40,7 +40,7 @@ namespace CarArena
         public float orbitSweepDeg = 70f;
 
         [Header("Presentation")]
-        public string title = "THE ARENA";
+        public string title = "LAURUS RACING";
         [Range(0f, 0.2f)] public float letterbox = 0.11f;
         public float fadeInTime = 1.2f;
 

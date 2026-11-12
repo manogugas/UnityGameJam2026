@@ -300,11 +300,11 @@ MonoBehaviour:
   carAudio: {fileID: 6632738712805328052}
   enabledByUser: 0
   livePriority: 50
-  distance: 6.5
-  height: 2.2
+  distance: 5.6
+  height: 1.6
   lookHeight: 1
-  fov: 66
-  speedPullback: 0.035
+  fov: 58
+  speedPullback: 0.002
   rotationDamping: 4
   positionDamping: 10
   sideLookAngle: 85
@@ -1199,7 +1199,7 @@ MonoBehaviour:
   handoverTime: 1.8
   orbitStartDeg: 200
   orbitSweepDeg: 70
-  title: THE ARENA
+  title: LAURUS RACING
   letterbox: 0.11
   fadeInTime: 1.2
   autoPlay: 0

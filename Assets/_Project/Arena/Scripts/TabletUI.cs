@@ -396,7 +396,8 @@ namespace CarArena
             startScreen = Rect(c, "Start", Vector2.zero, Vector2.one).gameObject;
             var s = startScreen.transform;
             Icon(s, iconLaurel, new Vector2(0.43f, 0.66f), new Vector2(0.57f, 0.9f), gold);
-            var title = Text(s, "THE ARENA", 120, TextAlignmentOptions.Center, new Vector2(0.05f, 0.5f), new Vector2(0.95f, 0.68f), Color.white);
+            var title = Text(s, "LAURUS RACING", 120, TextAlignmentOptions.Center, new Vector2(0.05f, 0.5f), new Vector2(0.95f, 0.68f), Color.white);
+            FitText(title, 60f, 120f); // one line across the screen
             title.fontStyle = FontStyles.Bold;
             title.characterSpacing = 12f;
             startInfo = Text(s, "", 30, TextAlignmentOptions.Center, new Vector2(0.05f, 0.4f), new Vector2(0.95f, 0.48f), muted);

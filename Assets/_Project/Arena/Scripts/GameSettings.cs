@@ -18,7 +18,8 @@ namespace CarArena
         public const float MinVolume = 0.0001f; // -80 dB: Log10(0) would be -infinity
 
         public static float Master = 1f;
-        public static float Car = 1f;
+        public const float DefaultCar = 0.4f; // engine and tyres are loud next to everything else
+        public static float Car = DefaultCar;
         public static float Effects = 1f;
         public static float Crowd = 1f;
         /// <summary>Impact shake, head jolt and road rumble.</summary>
@@ -75,7 +76,7 @@ namespace CarArena
         public static void Load()
         {
             Master = PlayerPrefs.GetFloat(Prefix + "Master", 1f);
-            Car = PlayerPrefs.GetFloat(Prefix + "Car", 1f);
+            Car = PlayerPrefs.GetFloat(Prefix + "Car", DefaultCar);
             Effects = PlayerPrefs.GetFloat(Prefix + "Effects", 1f);
             Crowd = PlayerPrefs.GetFloat(Prefix + "Crowd", 1f);
             CameraShake = PlayerPrefs.GetFloat(Prefix + "CameraShake", 1f);
@@ -96,7 +97,8 @@ namespace CarArena
 
         public static void ResetDefaults()
         {
-            Master = Car = Effects = Crowd = CameraShake = SpeedEffects = 1f;
+            Master = Effects = Crowd = CameraShake = SpeedEffects = 1f;
+            Car = DefaultCar;
             Apply();
         }
 
