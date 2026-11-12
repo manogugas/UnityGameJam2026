@@ -102,11 +102,11 @@ namespace CarArena.EditorTools
 
             var enemyPrefabs = new[]
             {
-                BuildEnemyPrefab(asphalt, DriverArchetype.Rammer, "Rammer", new Color(0.62f, 0.16f, 0.12f), 1250f, 60f, 125f, 2700f),
-                BuildEnemyPrefab(asphalt, DriverArchetype.Flanker, "Flanker", new Color(0.85f, 0.65f, 0.12f), 1100f, 50f, 120f, 2500f),
-                BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Bruiser", new Color(0.2f, 0.24f, 0.18f), 1900f, 110f, 165f, 3600f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Rammer, "Rammer", new Color(0.55f, 0.12f, 0.09f), new Color(0.12f, 0.12f, 0.13f), 1250f, 60f, 125f, 2700f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Flanker, "Flanker", new Color(0.86f, 0.63f, 0.12f), new Color(0.1f, 0.1f, 0.11f), 1100f, 50f, 120f, 2500f),
+                BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Bruiser", new Color(0.22f, 0.25f, 0.2f), new Color(0.85f, 0.62f, 0.12f), 1900f, 110f, 165f, 3600f),
             };
-            var champion = BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Champion", new Color(0.85f, 0.66f, 0.18f), 2300f, 220f, 200f, 4200f, "EnemyChampion");
+            var champion = BuildEnemyPrefab(asphalt, DriverArchetype.Bruiser, "Champion", new Color(0.86f, 0.68f, 0.2f), new Color(0.55f, 0.07f, 0.06f), 2300f, 220f, 200f, 4200f, "EnemyChampion");
             var director = BuildDirector(car, enemyPrefabs);
             BuildIntro(car, playerGate, director);
             BuildCampaign(car, playerGate, director, new[] { enemyPrefabs[0], enemyPrefabs[1], enemyPrefabs[2], champion });
@@ -1137,7 +1137,7 @@ namespace CarArena.EditorTools
                 so.ApplyModifiedPropertiesWithoutUndo();
             }
 
-            var vis = player ? BuildRacerBody(t, rb) : BuildGreyboxBody(t, rb);
+            var vis = BuildRacerBody(t, rb, player);
             var bodyRoot = vis.bodyRoot;
 
             // ---- Wheels
@@ -1666,8 +1666,12 @@ namespace CarArena.EditorTools
         static Vector3 RM(float x, float y, float z) => new Vector3(x, y, z) + RacerOffset;
         static Vector3 RM(Vector3 p) => p + RacerOffset;
 
-        /// <summary>Player car body: the multi-part Racer 01 model with modelled interior, engine bay and underside.</summary>
-        static CarVisuals BuildRacerBody(Transform t, Rigidbody rb)
+        /// <summary>
+        /// Car body: the multi-part Racer 01 model with modelled interior, engine bay and underside.
+        /// Enemies get the same body repainted (mBody = main paint, mPanel = stripes), their door glass
+        /// up, and no working gauges.
+        /// </summary>
+        static CarVisuals BuildRacerBody(Transform t, Rigidbody rb, bool player)
         {
             var vis = new CarVisuals { racer = true };
 
@@ -1680,8 +1684,9 @@ namespace CarArena.EditorTools
             colCabin.sharedMaterial = carPhysMat;
 
             // Windows down: the garage arm passes the tablet in through the passenger window.
-            var r = Racer01Body.Spawn(t, RacerOffset, carPhysMat, true, "HoodScoop");
+            var r = Racer01Body.Spawn(t, RacerOffset, carPhysMat, player, "HoodScoop");
             var body = r.body.transform;
+            if (!player) Repaint(body.gameObject, mBody, mPanel);
             vis.bodyRoot = body;
             vis.parts.AddRange(r.detachables);
 
@@ -1732,8 +1737,11 @@ namespace CarArena.EditorTools
             vis.dashCracks.maxCracks = 6;
             vis.dashCracks.stripWidth = 0.006f;
             // Binnacle face at local z = -0.21: speedometer left, tachometer right, warning lamps between.
-            vis.speedNeedle = Gauge("Speedometer", dash, new Vector3(-0.475f, 0.01f, -0.214f), 200f, 20f, 10f, 1f, 2, "km/h", -1f);
-            vis.rpmNeedle = Gauge("Tachometer", dash, new Vector3(-0.285f, 0.01f, -0.214f), 8000f, 1000f, 500f, 1000f, 1, "x1000 rpm", 6500f);
+            if (player)
+            {
+                vis.speedNeedle = Gauge("Speedometer", dash, new Vector3(-0.475f, 0.01f, -0.214f), 200f, 20f, 10f, 1f, 2, "km/h", -1f);
+                vis.rpmNeedle = Gauge("Tachometer", dash, new Vector3(-0.285f, 0.01f, -0.214f), 8000f, 1000f, 500f, 1000f, 1, "x1000 rpm", 6500f);
+            }
             vis.lampsPos = new Vector3(-0.38f, 0.01f, -0.216f);
             vis.healthGaugePos = new Vector3(0f, -0.03f, -0.202f); // centre stack face
             vis.tcButtonPos = new Vector3(-0.70f, -0.04f, -0.172f); // dash face left of the binnacle
@@ -1763,6 +1771,23 @@ namespace CarArena.EditorTools
             vis.smokePos = RM(0f, 0.84f, 1.5f);
             vis.topHeight = RM(0f, 1.2f, 0f).y;
             return vis;
+        }
+
+        /// <summary>Swap the Racer's livery: main paint and stripe colours (enemy cars).</summary>
+        static void Repaint(GameObject body, Material paint, Material stripe)
+        {
+            foreach (var mr in body.GetComponentsInChildren<MeshRenderer>(true))
+            {
+                var mats = mr.sharedMaterials;
+                bool changed = false;
+                for (int i = 0; i < mats.Length; i++)
+                {
+                    if (mats[i] == null) continue;
+                    if (mats[i].name == "Racer01_Paint" && paint != null) { mats[i] = paint; changed = true; }
+                    else if (mats[i].name == "Racer01_Red" && stripe != null) { mats[i] = stripe; changed = true; }
+                }
+                if (changed) mr.sharedMaterials = mats;
+            }
         }
 
         /// <summary>Racing number on the Racer: roof roundel plus one on each door (they leave with the doors).</summary>
@@ -2195,11 +2220,12 @@ namespace CarArena.EditorTools
         }
 
         static GameObject BuildEnemyPrefab(SurfaceProfile defaultSurface, DriverArchetype archetype, string name,
-            Color paint, float mass, float health, float powerKW, float torque, string fileName = null)
+            Color paint, Color stripe, float mass, float health, float powerKW, float torque, string fileName = null)
         {
             fileName = fileName ?? "Enemy" + archetype;
+            // Same Racer 01 body as the player, own livery: main paint + stripes.
             var body = Mat(fileName + "Body", paint, 0.35f, 0.25f);
-            var panel = Mat(fileName + "Panel", paint * 0.88f, 0.35f, 0.25f);
+            var panel = Mat(fileName + "Panel", stripe, 0.4f, 0.2f);
             var car = BuildCar(defaultSurface, name, false, body, panel);
             var controller = car.GetComponent<CarController>();
             controller.mass = mass;

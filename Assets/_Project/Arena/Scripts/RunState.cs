@@ -23,7 +23,7 @@ namespace CarArena
         public int markedNumber = -1;
         public bool championBeaten;
 
-        public bool HasNumber => carNumber >= 10 && carNumber <= 99;
+        public bool HasNumber => carNumber >= 0 && carNumber <= 99;
 
         public int Level(UpgradeType t) => upgrades != null && (int)t < upgrades.Length ? upgrades[(int)t] : 0;
 

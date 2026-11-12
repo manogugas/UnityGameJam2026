@@ -97,7 +97,7 @@ namespace CarArena
             damage.RepairAll();
             ApplyRunToCar(run);
             CurrentPhase = Phase.PickNumber;
-            tablet.ShowNumberPicker(Random.Range(10, 100));
+            tablet.ShowNumberPicker(Random.Range(0, 100));
         }
 
         public void ContinueRun()
@@ -111,7 +111,7 @@ namespace CarArena
 
         public void ConfirmNumber(int n)
         {
-            run.carNumber = Mathf.Clamp(n, 10, 99);
+            run.carNumber = Mathf.Clamp(n, 0, 99);
             plates.SetNumber(run.carNumber);
             EnterGarage();
         }
@@ -196,13 +196,13 @@ namespace CarArena
             string who = PlayerMarked
                 ? $"YOU. Every car is coming for you  -  survive for x{settings.markedSurvivalMultiplier:0.#} pay"
                 : $"{MarkedName()}  -  wreck it for x{settings.markedBountyMultiplier:0.#} bounty";
-            overlay.Announce($"THE EMPEROR MARKS #{run.markedNumber}", who, 3.5f);
+            overlay.Announce($"THE EMPEROR MARKS #{CarNumberPlates.Format(run.markedNumber)}", who, 3.5f);
         }
 
         string MarkedName()
         {
             foreach (var e in nextEnemies) if (e.marked) return e.label;
-            return "#" + run.markedNumber;
+            return "#" + CarNumberPlates.Format(run.markedNumber);
         }
 
         void OnGiftCollected(CarHealth collector)
@@ -355,7 +355,7 @@ namespace CarArena
                     number = number,
                     healthScale = scale,
                     powerScale = 1f + (NextMatch.statScale - 1f) * 0.5f,
-                    label = type == EnemyType.Champion ? $"The Champion #{number}" : $"{type} #{number}",
+                    label = type == EnemyType.Champion ? $"The Champion #{CarNumberPlates.Format(number)}" : $"{type} #{CarNumberPlates.Format(number)}",
                 });
             }
 

@@ -188,7 +188,7 @@ namespace CarArena
                 float max = health.maxHealth * spec.healthScale;
                 health.SetMaxHealth(max, max);
                 health.marked = spec.marked;
-                health.displayName = !string.IsNullOrEmpty(spec.label) ? spec.label : $"{health.displayName} #{spec.number}";
+                health.displayName = !string.IsNullOrEmpty(spec.label) ? spec.label : $"{health.displayName} #{CarNumberPlates.Format(spec.number)}";
                 spawnCount++;
                 health.Died += OnEnemyDied;
                 enemies.Add(health);

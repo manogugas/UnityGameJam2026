@@ -15,10 +15,13 @@ namespace CarArena
 
         public int Number { get; private set; } = -1;
 
+        /// <summary>Racing numbers are always two digits: 00-99.</summary>
+        public static string Format(int number) => Mathf.Clamp(number, 0, 99).ToString("00");
+
         public void SetNumber(int number)
         {
             Number = number;
-            string s = number >= 0 ? number.ToString() : "";
+            string s = number >= 0 ? Format(number) : "";
             if (texts == null) return;
             foreach (var t in texts) if (t != null) t.text = s;
         }

@@ -168,13 +168,13 @@ namespace CarArena
             SetScreen(startScreen);
             var r = campaign.SavedRun;
             startInfo.text = r != null
-                ? $"SAVED RUN   car <b>#{r.carNumber}</b>   match <b>{r.matchIndex + 1}</b>   <color=#{Hex(gold)}><b>${r.money}</b></color>   {r.wins} wins"
+                ? $"SAVED RUN   car <b>#{CarNumberPlates.Format(r.carNumber)}</b>   match <b>{r.matchIndex + 1}</b>   <color=#{Hex(gold)}><b>${r.money}</b></color>   {r.wins} wins"
                 : "";
         }
 
         public void ShowNumberPicker(int initial)
         {
-            pickValue = Mathf.Clamp(initial, 10, 99);
+            pickValue = Mathf.Clamp(initial, 0, 99);
             SetScreen(pickScreen);
             UpdatePick();
         }
@@ -204,7 +204,7 @@ namespace CarArena
 
         void UpdatePick()
         {
-            pickNumber.text = pickValue.ToString();
+            pickNumber.text = CarNumberPlates.Format(pickValue);
             campaign.PreviewNumber(pickValue);
         }
 
@@ -219,7 +219,7 @@ namespace CarArena
             string matchNo = run.matchIndex < total ? $"MATCH {run.matchIndex + 1}/{total}" : "ENDLESS";
             header.text = $"<color=#{Hex(muted)}>{matchNo}</color>   {m.name.ToUpper()}";
             money.text = $"${run.money}";
-            numberBadge.text = $"#{run.carNumber}";
+            numberBadge.text = $"#{CarNumberPlates.Format(run.carNumber)}";
 
             UpgradeType[] order = { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate };
             for (int i = 0; i < order.Length; i++)
@@ -260,8 +260,8 @@ namespace CarArena
             matchList.text = sb.ToString();
 
             markText.text = campaign.PlayerMarked
-                ? $"<size=130%><b>#{run.markedNumber}  -  YOU</b></size>\nEvery car will hunt you. Survive and the whole match pays x{settings.markedSurvivalMultiplier:0.#}."
-                : $"<size=130%><b>#{run.markedNumber}</b></size>\nEveryone hunts the marked car. Wreck it yourself for x{settings.markedBountyMultiplier:0.#} bounty.";
+                ? $"<size=130%><b>#{CarNumberPlates.Format(run.markedNumber)}  -  YOU</b></size>\nEvery car will hunt you. Survive and the whole match pays x{settings.markedSurvivalMultiplier:0.#}."
+                : $"<size=130%><b>#{CarNumberPlates.Format(run.markedNumber)}</b></size>\nEveryone hunts the marked car. Wreck it yourself for x{settings.markedBountyMultiplier:0.#} bounty.";
             markText.color = campaign.PlayerMarked ? gold : Color.white;
             rewardText.text = $"Victory pays <color=#{Hex(gold)}><b>${settings.WinReward(run.matchIndex)}</b></color>, plus the bounty for every car you wreck.";
             runText.text = $"Wins <b>{run.wins}</b>     Kills <b>{run.kills}</b>" + (run.championBeaten ? $"     <color=#{Hex(gold)}>CHAMPION</color>" : "");
@@ -353,7 +353,7 @@ namespace CarArena
             Text(s, "Painted on your roof and doors. Before every match the emperor marks one car's number:\n" +
                     "everyone hunts it. Wreck a marked car for triple bounty - or survive being marked for double pay.",
                 24, TextAlignmentOptions.Center, new Vector2(0.06f, 0.24f), new Vector2(0.94f, 0.39f), muted);
-            Btn(s, "RANDOM", new Vector2(0.24f, 0.07f), new Vector2(0.48f, 0.19f), () => { pickValue = UnityEngine.Random.Range(10, 100); UpdatePick(); }, panelLight, Color.white, true);
+            Btn(s, "RANDOM", new Vector2(0.24f, 0.07f), new Vector2(0.48f, 0.19f), () => { pickValue = UnityEngine.Random.Range(0, 100); UpdatePick(); }, panelLight, Color.white, true);
             Btn(s, "CONFIRM  >", new Vector2(0.52f, 0.07f), new Vector2(0.76f, 0.19f), () => campaign.ConfirmNumber(pickValue), gold, Color.black);
         }
 
@@ -514,7 +514,7 @@ namespace CarArena
 
         void Step(int d)
         {
-            pickValue = Mathf.Clamp(pickValue + d, 10, 99);
+            pickValue = (pickValue + d + 100) % 100; // wraps: 00 <-> 99
             UpdatePick();
         }
 
