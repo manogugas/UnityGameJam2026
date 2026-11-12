@@ -51,6 +51,12 @@ namespace CarArena
         volatile float gainNow = 1f;
         uint rng = 2463534242u;
 
+        // Read by CarAudioClips (the web build's clip-based engine).
+        public float Squeal => squeal;
+        public float Gravel => gravel;
+        public float Steam => steam;
+        public float GainNow => gainNow;
+
         void Awake()
         {
             sampleRate = AudioSettings.outputSampleRate;
@@ -77,6 +83,9 @@ namespace CarArena
             crashSource.dopplerLevel = 0f;
             GameSettings.Route(crashSource, GameSettings.Channel.Effects);
             ApplyCrashSpatial();
+
+            // No OnAudioFilterRead on the web: play pre-rendered engine loops instead.
+            if (WebAudio.Active) gameObject.AddComponent<CarAudioClips>().carAudio = this;
         }
 
         /// <summary>Exterior = heard from outside (intro cameras, enemies). Interior = from the driver's seat.</summary>
@@ -112,7 +121,7 @@ namespace CarArena
             lastClip = pick;
             // Bigger hits: louder and slightly lower (heavier); small knocks: quieter and higher.
             crashSource.pitch = Mathf.Lerp(1.12f, 0.9f, i.severity) * Random.Range(0.96f, 1.04f);
-            crashSource.PlayOneShot(crashClips[pick], Mathf.Lerp(0.25f, 1f, i.severity) * crashVolume * masterGain);
+            crashSource.PlayOneShot(crashClips[pick], Mathf.Lerp(0.25f, 1f, i.severity) * crashVolume * masterGain * WebAudio.Volume(GameSettings.Channel.Effects));
         }
 
         void Update()
@@ -165,7 +174,7 @@ namespace CarArena
 
         void OnAudioFilterRead(float[] data, int channels)
         {
-            if (sampleRate <= 0) return;
+            if (sampleRate <= 0 || WebAudio.Active) return; // CarAudioClips plays the engine instead
             double dt = 1.0 / sampleRate;
             var synth = engine;
             float r = rpm, l = load, sq = squeal, gr = gravel;

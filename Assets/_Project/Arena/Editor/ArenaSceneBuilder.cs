@@ -1009,6 +1009,8 @@ namespace CarArena.EditorTools
             crowd.rows = StandRows;
             crowd.crowdLoop = crowdLoopClip;
             crowd.ambientLoop = ambientLoopClip;
+            crowd.crowdLoopCabin = CabinAudioBaker.Bake(crowdLoopClip);   // web build: no live low-pass
+            crowd.ambientLoopCabin = CabinAudioBaker.Bake(ambientLoopClip);
             crowd.exclusions = new[] { new Bounds(new Vector3(0f, 10f, first + 3.25f), new Vector3(14.5f, 30f, 7f)) };
         }
 

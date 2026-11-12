@@ -43,6 +43,10 @@ namespace CarArena
         [Tooltip("Extra crowd volume at full excitement (big crash, kill).")]
         [Range(0f, 1f)] public float cheerBoost = 0.45f;
         [Range(0f, 1f)] public float ambientVolume = 0.3f;
+        [Tooltip("Web build only (no audio filters there): the loops pre-muffled as heard from the cabin " +
+                 "(CabinAudioBaker). Crossfaded with the originals instead of the live low-pass.")]
+        public AudioClip crowdLoopCabin;
+        public AudioClip ambientLoopCabin;
 
         [Header("Heard from inside the car")]
         [Tooltip("0 = outside (intro cameras), 1 = inside the cabin. Set with SetCabin().")]
@@ -64,7 +68,7 @@ namespace CarArena
         volatile float roar;
         int sampleRate;
         volatile CrowdSynth crowdSynth;
-        AudioSource crowdSource, ambientSource;
+        AudioSource crowdSource, ambientSource, crowdCabinSource, ambientCabinSource;
         AudioLowPassFilter crowdFilter, ambientFilter;
         float cabinTarget = 1f;
 
@@ -73,8 +77,16 @@ namespace CarArena
             Build();
             sampleRate = AudioSettings.outputSampleRate;
             cabinTarget = cabin;
-            crowdSource = MakeLoop("CrowdLoop", crowdLoop, out crowdFilter);
-            ambientSource = MakeLoop("AmbientLoop", ambientLoop, out ambientFilter);
+            float crowdStart = crowdLoop != null ? Random.Range(0f, crowdLoop.length * 0.9f) : 0f;
+            float ambientStart = ambientLoop != null ? Random.Range(0f, ambientLoop.length * 0.9f) : 0f;
+            crowdSource = MakeLoop("CrowdLoop", crowdLoop, crowdStart, out crowdFilter);
+            ambientSource = MakeLoop("AmbientLoop", ambientLoop, ambientStart, out ambientFilter);
+            if (WebAudio.Active)
+            {
+                // No filters on the web: play the pre-muffled copies in sync and crossfade (see ApplyMix).
+                crowdCabinSource = MakeLoop("CrowdLoopCabin", crowdLoopCabin, crowdStart, out _);
+                ambientCabinSource = MakeLoop("AmbientLoopCabin", ambientLoopCabin, ambientStart, out _);
+            }
             GameSettings.Route(GetComponent<AudioSource>(), GameSettings.Channel.Crowd);
             if (useSynth)
             {
@@ -89,7 +101,7 @@ namespace CarArena
         }
 
         /// <summary>Looping 2D source on its own child (keeps it out of the procedural filter chain).</summary>
-        AudioSource MakeLoop(string name, AudioClip clip, out AudioLowPassFilter filter)
+        AudioSource MakeLoop(string name, AudioClip clip, float startTime, out AudioLowPassFilter filter)
         {
             filter = null;
             if (clip == null) return null;
@@ -101,9 +113,9 @@ namespace CarArena
             src.loop = true;
             src.spatialBlend = 0f;
             src.playOnAwake = false;
-            filter = go.AddComponent<AudioLowPassFilter>();
+            if (!WebAudio.Active) filter = go.AddComponent<AudioLowPassFilter>();
             // Start each loop at a random point so the two never line up the same way.
-            src.time = Random.Range(0f, clip.length * 0.9f);
+            src.time = Mathf.Min(startTime, clip.length * 0.9f);
             src.Play();
             return src;
         }
@@ -113,6 +125,7 @@ namespace CarArena
 
         void ApplyMix(float e)
         {
+            if (WebAudio.Active) { ApplyWebMix(e); return; }
             float vol = Mathf.Lerp(1f, cabinVolume, cabin);
             float cutoff = Mathf.Lerp(22000f, cabinCutoff, Mathf.Sqrt(cabin));
             if (crowdSource != null)
@@ -126,6 +139,25 @@ namespace CarArena
                 ambientSource.volume = ambientVolume * vol;
                 ambientFilter.cutoffFrequency = cutoff;
             }
+        }
+
+        /// <summary>Web: same levels as the desktop mix, with the cabin low-pass replaced by a crossfade to the
+        /// pre-muffled copies (sqrt matches how the desktop cutoff falls), and the Crowd slider applied directly.</summary>
+        void ApplyWebMix(float e)
+        {
+            float vol = Mathf.Lerp(1f, cabinVolume, cabin) * WebAudio.Volume(GameSettings.Channel.Crowd);
+            float muffled = Mathf.Sqrt(cabin);
+            float crowd = (crowdVolume + cheerBoost * Mathf.Clamp01(e)) * vol;
+            float pitch = 1f + 0.04f * Mathf.Clamp01(e);
+            SetLoop(crowdSource, crowdCabinSource, crowd, muffled, pitch);
+            SetLoop(ambientSource, ambientCabinSource, ambientVolume * vol, muffled, 1f);
+        }
+
+        static void SetLoop(AudioSource open, AudioSource cabinCopy, float volume, float muffled, float pitch)
+        {
+            if (cabinCopy == null) muffled = 0f; // no baked copy: fall back to the plain loop
+            if (open != null) { open.volume = volume * (1f - muffled); open.pitch = pitch; }
+            if (cabinCopy != null) { cabinCopy.volume = volume * muffled; cabinCopy.pitch = pitch; }
         }
 
         /// <summary>0..1 how exciting the moment was (a big crash = ~1).</summary>
@@ -236,7 +268,7 @@ namespace CarArena
         void OnAudioFilterRead(float[] data, int channels)
         {
             var synth = crowdSynth;
-            if (synth == null || !useSynth) return;
+            if (synth == null || !useSynth || WebAudio.Active) return;
             synth.excitement = roar;
             float vol = volume;
             for (int i = 0; i < data.Length; i += channels)

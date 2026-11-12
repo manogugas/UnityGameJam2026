@@ -1619,6 +1619,8 @@ MonoBehaviour:
   crowdVolume: 0.45
   cheerBoost: 0.45
   ambientVolume: 0.3
+  crowdLoopCabin: {fileID: 8300000, guid: b0325073bd0b1e548a34658c3f62c92e, type: 3}
+  ambientLoopCabin: {fileID: 8300000, guid: b03ebafa6074bc84ab2e4f38ddff6c96, type: 3}
   cabin: 1
   cabinVolume: 0.4
   cabinCutoff: 1100

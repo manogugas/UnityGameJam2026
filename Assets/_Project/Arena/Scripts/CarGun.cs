@@ -197,7 +197,7 @@ namespace CarArena
             if (audioSource != null && shotClip != null)
             {
                 audioSource.pitch = Random.Range(0.92f, 1.08f);
-                audioSource.PlayOneShot(shotClip, volume);
+                audioSource.PlayOneShot(shotClip, volume * WebAudio.Volume(GameSettings.Channel.Effects));
             }
         }
 

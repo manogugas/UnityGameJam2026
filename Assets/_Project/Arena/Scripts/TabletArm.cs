@@ -105,7 +105,7 @@ namespace CarArena
 
             if (servo != null)
             {
-                servo.volume = Mathf.MoveTowards(servo.volume, moving ? servoVolume : 0f, Time.deltaTime * 3f);
+                servo.volume = Mathf.MoveTowards(servo.volume, moving ? servoVolume * WebAudio.Volume(GameSettings.Channel.Effects) : 0f, Time.deltaTime * 3f);
                 servo.pitch = 0.85f + 0.3f * Mathf.Sin(progress * Mathf.PI * 3f) * Mathf.Sin(progress * Mathf.PI * 3f);
                 if (servo.volume > 0.001f && !servo.isPlaying) servo.Play();
                 else if (servo.volume <= 0.001f && servo.isPlaying) servo.Stop();

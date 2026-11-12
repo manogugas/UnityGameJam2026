@@ -59,7 +59,8 @@ namespace CarArena
         /// <summary>Send a source through the mixer group for its channel.</summary>
         public static void Route(AudioSource source, Channel channel)
         {
-            if (source != null) source.outputAudioMixerGroup = Group(channel);
+            // No mixer on the web build: leave the source on the default output; WebAudio.Volume does the levels.
+            if (source != null) source.outputAudioMixerGroup = WebAudio.Active ? null : Group(channel);
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -109,6 +110,7 @@ namespace CarArena
         /// pause menu calls this again from Start.)</summary>
         public static void Apply()
         {
+            AudioListener.volume = WebAudio.Active ? Mathf.Clamp01(Master) : 1f; // the mixer does master elsewhere
             var m = Mixer;
             if (m != null)
             {
