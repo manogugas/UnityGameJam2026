@@ -32,6 +32,8 @@ namespace CarArena
         public float focusFov = 44f;
         [Tooltip("Pitch change while reading (negative = look up).")]
         public float focusPitch = -10f;
+        [Tooltip("How much of the screen the tablet fills once it's held up (the view zooms and tilts to fit).")]
+        [Range(0.5f, 1f)] public float screenFill = 0.94f;
 
         [Header("Icons")]
         public Sprite iconRepair;
@@ -41,6 +43,7 @@ namespace CarArena
         public Sprite iconRam;
         public Sprite iconBoost;
         public Sprite iconGun;
+        public Sprite iconTraction;
         public Sprite iconLaurel;
 
         [Header("Colours")]
@@ -72,14 +75,17 @@ namespace CarArena
         CanvasGroup content;
         TextMeshProUGUI bootText;
         float boot;
-        GameObject startScreen, pickScreen, garageScreen, workshopTab, matchTab;
+        GameObject startScreen, carScreen, pickScreen, garageScreen, workshopTab, matchTab;
+        static readonly DriveType[] CarOrder = { DriveType.FWD, DriveType.AWD, DriveType.RWD };
+        readonly GameObject[] carSelected = new GameObject[3];
+        DriveType carPick = DriveType.AWD;
         TextMeshProUGUI startInfo, pickNumber;
         TextMeshProUGUI header, money, numberBadge, hullText, matchList, markText, rewardText, runText;
         Image hullFill, tabWorkshopBar, tabMatchBar;
         static readonly UpgradeType[] UpgradeOrder =
-            { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate, UpgradeType.Boost, UpgradeType.Gun };
-        Image[] statFills = new Image[6];
-        TextMeshProUGUI[] statValues = new TextMeshProUGUI[6];
+            { UpgradeType.Armour, UpgradeType.Engine, UpgradeType.Tyres, UpgradeType.RamPlate, UpgradeType.Boost, UpgradeType.Gun, UpgradeType.Traction };
+        Image[] statFills = new Image[7];
+        TextMeshProUGUI[] statValues = new TextMeshProUGUI[7];
         RawImage carView;
         Button patchButton, fullButton;
         TextMeshProUGUI patchLabel, fullLabel;
@@ -91,6 +97,8 @@ namespace CarArena
         Button arenaButton;
         TextMeshProUGUI arenaLabel;
         float baseFov = -1f;
+        float fitFov = -1f, fitPitch, liveFocusFov = -1f, liveFocusPitch;
+        readonly Vector3[] corners = new Vector3[4];
 
         void Awake()
         {
@@ -150,10 +158,46 @@ namespace CarArena
         {
             float p = arm != null ? arm.Progress : (Visible ? 1f : 0f);
             float k = p * p * (3f - 2f * p);
-            // FOV belongs to CarCamera (speed feel); only lean in with a pitch change.
-            if (driverHead != null && baseFov > 0f && !Mathf.Approximately(focusFov, baseFov))
-                driverHead.baseFov = Mathf.Lerp(baseFov, focusFov, k);
-            if (driverHead != null) driverHead.pitchOffset = focusPitch * k;
+            FitToScreen();
+            // CarCamera owns the lens: lean in through its base FOV and pitch.
+            if (driverHead != null && baseFov > 0f) driverHead.baseFov = Mathf.Lerp(baseFov, liveFocusFov, k);
+            if (driverHead != null) driverHead.pitchOffset = liveFocusPitch * k;
+        }
+
+        /// <summary>
+        /// Once the tablet is held up, aim the head at its centre and zoom until it fills <see cref="screenFill"/>
+        /// of the screen (whichever of height or width runs out first, so any aspect ratio works).
+        /// </summary>
+        void FitToScreen()
+        {
+            float dt = Time.unscaledDeltaTime;
+            if (liveFocusFov < 0f) { liveFocusFov = focusFov; liveFocusPitch = focusPitch; }
+            if (driverCam != null && driverHead != null && canvas != null && arm != null && arm.Presented)
+            {
+                var cam = driverCam.transform;
+                ((RectTransform)canvas.transform).GetWorldCorners(corners);
+                Vector3 c = cam.InverseTransformPoint((corners[0] + corners[2]) * 0.5f);
+                if (c.z > 0.05f)
+                {
+                    float cy = c.y / c.z;
+                    float halfV = 0f, halfH = 0f;
+                    foreach (var w in corners)
+                    {
+                        Vector3 q = cam.InverseTransformPoint(w);
+                        if (q.z < 0.05f) continue;
+                        halfV = Mathf.Max(halfV, Mathf.Abs(q.y / q.z - cy));
+                        halfH = Mathf.Max(halfH, Mathf.Abs(q.x / q.z));
+                    }
+                    var view = Camera.main;
+                    float aspect = view != null ? view.aspect : 16f / 9f;
+                    float tanHalf = Mathf.Max(halfV, halfH / aspect) / Mathf.Max(0.3f, screenFill);
+                    fitFov = Mathf.Clamp(2f * Mathf.Atan(tanHalf) * Mathf.Rad2Deg, 25f, baseFov > 0f ? baseFov : 70f);
+                    fitPitch = driverHead.pitchOffset - Mathf.Atan(cy) * Mathf.Rad2Deg;
+                }
+            }
+            float a = 1f - Mathf.Exp(-4f * dt);
+            liveFocusFov = Mathf.Lerp(liveFocusFov, fitFov > 0f ? fitFov : focusFov, a);
+            liveFocusPitch = Mathf.Lerp(liveFocusPitch, fitFov > 0f ? fitPitch : focusPitch, a);
         }
 
         static void FadeFlash(Image img, float dt)
@@ -175,6 +219,19 @@ namespace CarArena
                 : "";
         }
 
+        public void ShowCarPicker(DriveType initial)
+        {
+            SetScreen(carScreen);
+            PickCar(initial);
+        }
+
+        void PickCar(DriveType d)
+        {
+            carPick = d;
+            for (int i = 0; i < CarOrder.Length; i++) carSelected[i].SetActive(CarOrder[i] == d);
+            campaign.PreviewDrive(d);
+        }
+
         public void ShowNumberPicker(int initial)
         {
             pickValue = Mathf.Clamp(initial, 0, 99);
@@ -192,6 +249,7 @@ namespace CarArena
         void SetScreen(GameObject s)
         {
             startScreen.SetActive(s == startScreen);
+            carScreen.SetActive(s == carScreen);
             pickScreen.SetActive(s == pickScreen);
             garageScreen.SetActive(s == garageScreen);
         }
@@ -220,7 +278,10 @@ namespace CarArena
 
             int total = settings.LadderLength;
             string matchNo = run.matchIndex < total ? $"MATCH {run.matchIndex + 1}/{total}" : "ENDLESS";
-            header.text = $"<color=#{Hex(muted)}>{matchNo}</color>   {m.name.ToUpper()}";
+            string drive = run.driveType >= 0 ? ((DriveType)run.driveType).ToString() : "RWD";
+            var venue = campaign.NextRaceTrack;
+            string where = venue != null ? $"   <color=#{Hex(muted)}>{venue.displayName.ToUpper()}</color>" : "";
+            header.text = $"<color=#{Hex(muted)}>{matchNo}</color>   {m.name.ToUpper()}{where}   <color=#{Hex(cyan)}>{drive}</color>";
             money.text = $"${run.money}";
             numberBadge.text = $"#{CarNumberPlates.Format(run.carNumber)}";
 
@@ -324,6 +385,7 @@ namespace CarArena
             var c = group.transform;
 
             BuildStart(c);
+            BuildCarPicker(c);
             BuildPicker(c);
             BuildGarage(c);
             SetScreen(startScreen);
@@ -352,6 +414,62 @@ namespace CarArena
                 UnityEditor.EditorApplication.isPlaying = false;
 #endif
             }, panelLight, muted, true);
+        }
+
+        void BuildCarPicker(Transform c)
+        {
+            carScreen = Rect(c, "PickCar", Vector2.zero, Vector2.one).gameObject;
+            var s = carScreen.transform;
+            var title = Text(s, "CHOOSE YOUR CAR", 54, TextAlignmentOptions.Center, new Vector2(0.05f, 0.84f), new Vector2(0.95f, 0.96f), cyan);
+            title.fontStyle = FontStyles.Bold;
+            title.characterSpacing = 6f;
+            Text(s, "Same Racer 01 body - what changes is which wheels the engine drives. You keep it for the whole run.",
+                24, TextAlignmentOptions.Center, new Vector2(0.05f, 0.77f), new Vector2(0.95f, 0.84f), muted);
+
+            string[] codes = { "FWD", "AWD", "RWD" };
+            string[] names = { "FRONT-WHEEL DRIVE", "ALL-WHEEL DRIVE", "REAR-WHEEL DRIVE" };
+            string[] about =
+            {
+                "Pulls itself through the corners. Stable and forgiving, but pushes wide if you're greedy and spins its wheels out of slow turns.",
+                "Power to all four wheels: the best launch and the most grip on sand. Steady, predictable, a little heavy to turn.",
+                "Pushes from the back: turns in sharply and slides on demand. Fastest in skilled hands, snappy on loose ground.",
+            };
+            string[] statNames = { "STABILITY", "TRACTION", "AGILITY" };
+            int[,] stats = { { 5, 3, 2 }, { 4, 5, 3 }, { 2, 3, 5 } };
+            for (int i = 0; i < 3; i++)
+            {
+                float x0 = 0.05f + i * 0.307f;
+                var card = Panel(s, "Car" + codes[i], new Vector2(x0, 0.23f), new Vector2(x0 + 0.287f, 0.74f), panel);
+                AddOutline(card, line, 2f);
+                var t = card.transform;
+                // Selected: faint gold wash + a thick gold border (edges, not an Outline effect: that fills a solid panel).
+                var sel = Panel(t, "Selected", Vector2.zero, Vector2.one, new Color(gold.r, gold.g, gold.b, 0.08f));
+                var st = sel.transform;
+                Panel(st, "Top", new Vector2(0f, 0.985f), Vector2.one, gold);
+                Panel(st, "Bottom", Vector2.zero, new Vector2(1f, 0.015f), gold);
+                Panel(st, "Left", Vector2.zero, new Vector2(0.012f, 1f), gold);
+                Panel(st, "Right", new Vector2(0.988f, 0f), Vector2.one, gold);
+                carSelected[i] = sel.gameObject;
+                var code = Text(t, codes[i], 72, TextAlignmentOptions.Left, new Vector2(0.07f, 0.78f), new Vector2(0.95f, 0.97f), cyan);
+                code.fontStyle = FontStyles.Bold;
+                Text(t, names[i], 24, TextAlignmentOptions.Left, new Vector2(0.07f, 0.69f), new Vector2(0.95f, 0.78f), Color.white).fontStyle = FontStyles.Bold;
+                var desc = Text(t, about[i], 20, TextAlignmentOptions.TopLeft, new Vector2(0.07f, 0.37f), new Vector2(0.93f, 0.67f), muted);
+                FitText(desc, 14f, 20f);
+                for (int j = 0; j < 3; j++)
+                {
+                    float top = 0.33f - j * 0.1f;
+                    Text(t, statNames[j], 18, TextAlignmentOptions.Left, new Vector2(0.07f, top - 0.07f), new Vector2(0.5f, top), muted).fontStyle = FontStyles.Bold;
+                    for (int p = 0; p < 5; p++)
+                    {
+                        float px = 0.5f + p * 0.088f;
+                        Panel(t, "Pip", new Vector2(px, top - 0.055f), new Vector2(px + 0.072f, top - 0.02f),
+                            p < stats[i, j] ? cyan : new Color(cyan.r, cyan.g, cyan.b, 0.15f));
+                    }
+                }
+                var d = CarOrder[i];
+                Btn(t, "", Vector2.zero, Vector2.one, () => PickCar(d), Color.clear, Color.clear);
+            }
+            Btn(s, "CONFIRM  >", new Vector2(0.38f, 0.07f), new Vector2(0.62f, 0.19f), () => campaign.ConfirmDrive(carPick), gold, Color.black);
         }
 
         void BuildPicker(Transform c)
@@ -444,23 +562,23 @@ namespace CarArena
             hullText.fontStyle = FontStyles.Bold;
             var hullBack = Panel(st, "HullBack", new Vector2(0.06f, 0.73f), new Vector2(0.94f, 0.81f), panelLight);
             hullFill = Panel(hullBack.transform, "Fill", Vector2.zero, Vector2.one, good);
-            string[] names = { "ARMOUR", "ENGINE", "TYRES", "RAM", "BOOST", "GUN" };
+            string[] names = { "ARMOUR", "ENGINE", "TYRES", "RAM", "BOOST", "GUN", "TRACTION" };
             for (int i = 0; i < names.Length; i++)
             {
-                float top = 0.67f - i * 0.107f;
-                Text(st, names[i], 20, TextAlignmentOptions.Left, new Vector2(0.06f, top - 0.06f), new Vector2(0.5f, top), muted).fontStyle = FontStyles.Bold;
-                statValues[i] = Text(st, "", 20, TextAlignmentOptions.Right, new Vector2(0.5f, top - 0.06f), new Vector2(0.94f, top), cyan);
-                var back = Panel(st, "Back", new Vector2(0.06f, top - 0.092f), new Vector2(0.94f, top - 0.064f), panelLight);
+                float top = 0.68f - i * 0.093f;
+                Text(st, names[i], 18, TextAlignmentOptions.Left, new Vector2(0.06f, top - 0.052f), new Vector2(0.5f, top), muted).fontStyle = FontStyles.Bold;
+                statValues[i] = Text(st, "", 18, TextAlignmentOptions.Right, new Vector2(0.5f, top - 0.052f), new Vector2(0.94f, top), cyan);
+                var back = Panel(st, "Back", new Vector2(0.06f, top - 0.079f), new Vector2(0.94f, top - 0.057f), panelLight);
                 statFills[i] = Panel(back.transform, "Fill", Vector2.zero, Vector2.one, cyan);
             }
 
-            // Bottom row: repair + six upgrade cards
-            float x0 = 0.1f, x1 = 0.98f, gap = 0.01f;
-            float cw = (x1 - x0 - gap * 6f) / 7f;
+            // Bottom row: repair + seven upgrade cards
+            float x0 = 0.1f, x1 = 0.98f, gap = 0.008f;
+            float cw = (x1 - x0 - gap * 7f) / 8f;
             RepairCard(w, new Vector2(x0, 0.03f), new Vector2(x0 + cw, 0.33f));
             UpgradeType[] order = UpgradeOrder;
-            Sprite[] icons = { iconArmour, iconEngine, iconTyres, iconRam, iconBoost, iconGun };
-            string[] titles = { "ARMOUR", "ENGINE", "TYRES", "RAM", "BOOST", "GUN" };
+            Sprite[] icons = { iconArmour, iconEngine, iconTyres, iconRam, iconBoost, iconGun, iconTraction };
+            string[] titles = { "ARMOUR", "ENGINE", "TYRES", "RAM", "BOOST", "GUN", "TC" };
             for (int i = 0; i < order.Length; i++)
             {
                 float a = x0 + (cw + gap) * (i + 1);

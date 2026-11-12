@@ -123,8 +123,8 @@ namespace CarArena
             if (gun == null) gun = GetComponent<CarGun>();
             if (boost == null) boost = GetComponent<CarBoost>();
             float bw = Mathf.Min(260f, w * 0.2f), bh = 10f, x = (w - bw) * 0.5f, y = h - 34f;
-            if (gun != null) Meter(new Rect(x, y, bw, bh), gun.Ammo01, gun.Firing ? new Color(1f, 0.85f, 0.4f) : new Color(1f, 0.7f, 0.25f), $"AMMO {Mathf.FloorToInt(gun.Ammo)}");
-            if (boost != null) Meter(new Rect(x, y - 26f, bw, bh), boost.charge, boost.Boosting ? new Color(0.5f, 0.95f, 1f) : new Color(0.3f, 0.75f, 1f), "BOOST");
+            if (gun != null && gun.Unlocked) Meter(new Rect(x, y, bw, bh), gun.Ammo01, gun.Firing ? new Color(1f, 0.85f, 0.4f) : new Color(1f, 0.7f, 0.25f), $"AMMO {Mathf.FloorToInt(gun.Ammo)}");
+            if (boost != null && boost.unlocked) Meter(new Rect(x, y - 26f, bw, bh), boost.charge, boost.Boosting ? new Color(0.5f, 0.95f, 1f) : new Color(0.3f, 0.75f, 1f), "BOOST");
         }
 
         void Meter(Rect r, float f, Color fill, string label)
@@ -142,7 +142,12 @@ namespace CarArena
         /// <summary>Always-on reminder of the debug and camera keys (the debug overlay's own header lists them when open).</summary>
         void DrawKeyHint()
         {
-            const string text = "<b>LMB/Ctrl</b> gun    <b>Shift</b> boost    <b>C</b> camera    <b>Esc</b> menu    <b>F3</b> debug";
+            if (gun == null) gun = GetComponent<CarGun>();
+            if (boost == null) boost = GetComponent<CarBoost>();
+            // Only list what's fitted: the gun and boost are bought upgrades.
+            string text = (gun != null && gun.Unlocked ? "<b>LMB/Ctrl</b> gun    " : "") +
+                          (boost != null && boost.unlocked ? "<b>Shift</b> boost    " : "") +
+                          "<b>C</b> camera    <b>Esc</b> menu    <b>F3</b> debug";
             var old = GUI.color;
             GUI.color = new Color(0f, 0f, 0f, 0.6f);
             GUI.Label(new Rect(16, 11, 700, 22), text, small);

@@ -166,6 +166,23 @@ namespace CarArena.EditorTools
             return d;
         }
 
+        /// <summary>Traction control: the dashboard symbol, a car with two wavy skid lines under it.</summary>
+        static float TractionIcon(Vector2 p)
+        {
+            float d = Box(p, new Vector2(0f, 0.38f), new Vector2(0.42f, 0.16f));
+            d = Mathf.Min(d, Poly(p, new Vector2(-0.26f, 0.5f), new Vector2(0.26f, 0.5f), new Vector2(0.16f, 0.72f), new Vector2(-0.16f, 0.72f)));
+            d = Mathf.Min(d, Circle(p, new Vector2(-0.26f, 0.2f), 0.11f));
+            d = Mathf.Min(d, Circle(p, new Vector2(0.26f, 0.2f), 0.11f));
+            for (int side = -1; side <= 1; side += 2)
+                for (int i = 0; i < 6; i++)
+                {
+                    float y0 = -0.05f - i * 0.13f, y1 = y0 - 0.13f;
+                    float x0 = side * 0.3f + (i % 2 == 0 ? -0.09f : 0.09f), x1 = side * 0.3f + (i % 2 == 0 ? 0.09f : -0.09f);
+                    d = Mathf.Min(d, Segment(p, new Vector2(x0, y0), new Vector2(x1, y1), 0.045f));
+                }
+            return d;
+        }
+
         static float Laurel(Vector2 p)
         {
             float d = float.MaxValue;
@@ -207,6 +224,7 @@ namespace CarArena.EditorTools
         public static Sprite IconLaurel() => IconSprite("IconLaurel", Laurel);
         public static Sprite IconBoost() => IconSprite("IconBoost", BoostIcon);
         public static Sprite IconGun() => IconSprite("IconGun", GunIcon);
+        public static Sprite IconTraction() => IconSprite("IconTraction", TractionIcon);
 
         static Sprite IconSprite(string name, Func<Vector2, float> sdf)
         {

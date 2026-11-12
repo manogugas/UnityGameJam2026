@@ -83,6 +83,7 @@ namespace CarArena
             audioGo.transform.SetParent(muzzle != null ? muzzle : transform, false);
             audioSource = audioGo.AddComponent<AudioSource>();
             audioSource.playOnAwake = false;
+            GameSettings.Route(audioSource, GameSettings.Channel.Effects);
             audioSource.spatialBlend = playerControlled ? 0.2f : 1f;
             audioSource.minDistance = 5f;
             audioSource.maxDistance = 120f;
@@ -97,6 +98,17 @@ namespace CarArena
         /// <summary>AI: hold or release the trigger.</summary>
         public void SetTrigger(bool on) => aiTrigger = on;
 
+        /// <summary>False until the player buys the gun upgrade: can't fire, and the gun isn't bolted on.</summary>
+        public bool Unlocked { get; private set; } = true;
+
+        public void SetUnlocked(bool on)
+        {
+            Unlocked = on;
+            if (!on) Firing = false;
+            // The mount (muzzle's parent) is the visible gun on the bonnet.
+            if (muzzle != null && muzzle.parent != null && muzzle.parent != transform) muzzle.parent.gameObject.SetActive(on);
+        }
+
         /// <summary>Full magazine (back in the garage).</summary>
         public void Reload() => Ammo = MagazineSize;
 
@@ -104,7 +116,7 @@ namespace CarArena
         {
             float dt = Time.deltaTime;
             bool trigger = playerControlled ? PlayerTrigger() : aiTrigger;
-            bool canFire = health == null || !health.IsDead;
+            bool canFire = Unlocked && (health == null || !health.IsDead);
             if (input != null && input.overrideDriving && playerControlled) canFire = false; // garage, intro, grid
 
             cooldown -= dt;
@@ -185,7 +197,7 @@ namespace CarArena
             if (audioSource != null && shotClip != null)
             {
                 audioSource.pitch = Random.Range(0.92f, 1.08f);
-                audioSource.PlayOneShot(shotClip, volume * GameSettings.Effects);
+                audioSource.PlayOneShot(shotClip, volume);
             }
         }
 

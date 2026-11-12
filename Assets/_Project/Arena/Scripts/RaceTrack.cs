@@ -9,6 +9,11 @@ namespace CarArena
     /// </summary>
     public class RaceTrack : MonoBehaviour
     {
+        [Tooltip("Shown on the tablet before a race here.")]
+        public string displayName = "Track";
+        public int laps = 3;
+        [Tooltip("This track's checkpoint banners (index 0 = finish line); the race director lights the next one.")]
+        public Renderer[] checkpointMarkers;
         [Tooltip("Closed centreline, in racing order.")]
         public Vector3[] points;
         public float halfWidth = 8f;

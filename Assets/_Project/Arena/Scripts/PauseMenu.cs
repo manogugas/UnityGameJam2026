@@ -23,6 +23,8 @@ namespace CarArena
         bool savedCursorVisible;
         CursorLockMode savedLock;
 
+        void Start() => GameSettings.Apply(); // the mixer ignores SetFloat before the first frame
+
         void Update()
         {
             var k = Keyboard.current;
@@ -141,7 +143,8 @@ namespace CarArena
             y += bh * 1.6f;
             GUI.Label(new Rect(0, y, w, h * 0.12f),
                 "<b>WASD</b> drive   <b>Space</b> handbrake   <b>Shift</b> boost   <b>LMB / Ctrl</b> machine gun\n" +
-                "<b>Q / E / Alt</b> look   <b>C</b> camera   <b>R</b> flip upright   <b>B</b> assists   <b>F3</b> debug", hint);
+                "<b>Q / E / Alt</b> look   <b>C</b> camera   <b>R</b> flip upright   " +
+                (campaign != null && campaign.player != null && campaign.player.assistsLocked ? "" : "<b>B</b> assists   ") + "<b>F3</b> debug", hint);
         }
 
         void DrawSettings(float w, float h)
@@ -149,20 +152,22 @@ namespace CarArena
             GUI.Label(new Rect(0, h * 0.08f, w, h * 0.1f), "SETTINGS", title);
             float rowH = h * 0.068f, colW = Mathf.Min(w * 0.9f, h * 1.1f), x = (w - colW) * 0.5f, y = h * 0.21f;
 
-            float before = GameSettings.Master + GameSettings.Engine + GameSettings.Effects + GameSettings.Crowd +
+            float before = GameSettings.Master + GameSettings.Car + GameSettings.Effects + GameSettings.Crowd +
                            GameSettings.CameraShake + GameSettings.SpeedEffects;
 
             Section(x, ref y, colW, rowH, "SOUND");
-            GameSettings.Master = Slider(x, ref y, colW, rowH, "Master volume", GameSettings.Master, 1f);
-            GameSettings.Engine = Slider(x, ref y, colW, rowH, "Engine", GameSettings.Engine, 1.5f);
-            GameSettings.Effects = Slider(x, ref y, colW, rowH, "Effects (crashes, tyres, gun)", GameSettings.Effects, 1.5f);
-            GameSettings.Crowd = Slider(x, ref y, colW, rowH, "Crowd", GameSettings.Crowd, 1.5f);
+            // Volumes: 0.0001..1, turned into mixer decibels (Log10 * 20) by GameSettings.Apply.
+            float lo = GameSettings.MinVolume;
+            GameSettings.Master = Slider(x, ref y, colW, rowH, "Master volume", GameSettings.Master, lo, 1f);
+            GameSettings.Car = Slider(x, ref y, colW, rowH, "Car (engine, tyres)", GameSettings.Car, lo, 1f);
+            GameSettings.Effects = Slider(x, ref y, colW, rowH, "Effects (crashes, gun, garage)", GameSettings.Effects, lo, 1f);
+            GameSettings.Crowd = Slider(x, ref y, colW, rowH, "Crowd", GameSettings.Crowd, lo, 1f);
             y += rowH * 0.25f;
             Section(x, ref y, colW, rowH, "CAMERA");
-            GameSettings.CameraShake = Slider(x, ref y, colW, rowH, "Camera shake", GameSettings.CameraShake, 1.5f);
-            GameSettings.SpeedEffects = Slider(x, ref y, colW, rowH, "Speed effects (FOV, speed lines)", GameSettings.SpeedEffects, 1.5f);
+            GameSettings.CameraShake = Slider(x, ref y, colW, rowH, "Camera shake", GameSettings.CameraShake, 0f, 1.5f);
+            GameSettings.SpeedEffects = Slider(x, ref y, colW, rowH, "Speed effects (FOV, speed lines)", GameSettings.SpeedEffects, 0f, 1.5f);
 
-            float after = GameSettings.Master + GameSettings.Engine + GameSettings.Effects + GameSettings.Crowd +
+            float after = GameSettings.Master + GameSettings.Car + GameSettings.Effects + GameSettings.Crowd +
                           GameSettings.CameraShake + GameSettings.SpeedEffects;
             if (!Mathf.Approximately(before, after)) GameSettings.Apply();
 
@@ -185,7 +190,7 @@ namespace CarArena
             y += rowH * 0.8f;
         }
 
-        float Slider(float x, ref float y, float width, float rowH, string name, float v, float max)
+        float Slider(float x, ref float y, float width, float rowH, string name, float v, float min, float max)
         {
             GUI.Label(new Rect(x, y, width * 0.45f, rowH), name, label);
             float sx = x + width * 0.47f, sw = width * 0.4f;
@@ -196,7 +201,7 @@ namespace CarArena
             GUI.color = new Color(1f, 0.82f, 0.4f, 0.9f);
             GUI.DrawTexture(new Rect(sx, y + rowH * 0.5f - 3f, sw * Mathf.Clamp01(v / max), 6f), Texture2D.whiteTexture);
             GUI.color = c;
-            v = GUI.HorizontalSlider(new Rect(sx, y + rowH * 0.4f, sw, rowH * 0.3f), v, 0f, max);
+            v = GUI.HorizontalSlider(new Rect(sx, y + rowH * 0.4f, sw, rowH * 0.3f), v, min, max);
             GUI.Label(new Rect(x + width * 0.87f, y, width * 0.13f, rowH), $"{Mathf.RoundToInt(v * 100f)}%", value);
             y += rowH;
             return v;

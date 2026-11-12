@@ -21,6 +21,8 @@ namespace CarArena
         public float padRefillScale = 1f;
 
         public bool Boosting { get; private set; }
+        [Tooltip("False until the boost upgrade is bought: Shift does nothing and pads/rams don't fill the meter.")]
+        public bool unlocked = true;
 
         CarInput input;
 
@@ -39,13 +41,16 @@ namespace CarArena
             if (info.otherBody != null) AddCharge(info.severity * ramRefill);
         }
 
-        public void AddCharge(float amount) => charge = Mathf.Clamp01(charge + amount);
+        public void AddCharge(float amount)
+        {
+            if (unlocked) charge = Mathf.Clamp01(charge + amount);
+        }
 
         void Update()
         {
             var k = Keyboard.current;
             bool held = k != null && k.leftShiftKey.isPressed;
-            bool allowed = car != null && !car.EngineDead && (input == null || !input.overrideDriving);
+            bool allowed = unlocked && car != null && !car.EngineDead && (input == null || !input.overrideDriving);
             Boosting = held && allowed && charge > 0.01f;
             float dt = Time.deltaTime;
             if (Boosting)

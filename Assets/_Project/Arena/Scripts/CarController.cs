@@ -143,6 +143,24 @@ namespace CarArena
             }
         }
 
+        /// <summary>The campaign picks the drivetrain once per run: the T debug key can't change it.</summary>
+        [System.NonSerialized] public bool drivetrainLocked;
+        /// <summary>Until the traction control upgrade is bought the assists stay on (B does nothing).</summary>
+        [System.NonSerialized] public bool assistsLocked;
+
+        public void SetDriveType(DriveType type)
+        {
+            driveType = type;
+            ApplyCenterOfMass();
+        }
+
+        /// <summary>Lock the assists on (no traction control upgrade) or let the driver switch them.</summary>
+        public void SetAssistsLocked(bool locked)
+        {
+            assistsLocked = locked;
+            if (locked) { tractionControl = true; abs = true; }
+        }
+
         public void ApplyCenterOfMass()
         {
             if (rb == null) rb = GetComponent<Rigidbody>();
@@ -162,13 +180,13 @@ namespace CarArena
 
         void Update()
         {
-            if (input.CycleDrivePressed)
+            if (input.CycleDrivePressed && !drivetrainLocked)
             {
                 driveType = (DriveType)(((int)driveType + 1) % 3);
                 ApplyCenterOfMass();
             }
             if (input.ResetPressed && !EngineDead) ResetCar();
-            if (input.ToggleAssistsPressed)
+            if (input.ToggleAssistsPressed && !assistsLocked)
             {
                 tractionControl = !tractionControl;
                 abs = tractionControl;

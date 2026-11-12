@@ -75,6 +75,7 @@ namespace CarArena
             cabinTarget = cabin;
             crowdSource = MakeLoop("CrowdLoop", crowdLoop, out crowdFilter);
             ambientSource = MakeLoop("AmbientLoop", ambientLoop, out ambientFilter);
+            GameSettings.Route(GetComponent<AudioSource>(), GameSettings.Channel.Crowd);
             if (useSynth)
             {
                 crowdSynth = new CrowdSynth(sampleRate);
@@ -95,6 +96,7 @@ namespace CarArena
             var go = new GameObject(name);
             go.transform.SetParent(transform, false);
             var src = go.AddComponent<AudioSource>();
+            GameSettings.Route(src, GameSettings.Channel.Crowd);
             src.clip = clip;
             src.loop = true;
             src.spatialBlend = 0f;
@@ -111,7 +113,7 @@ namespace CarArena
 
         void ApplyMix(float e)
         {
-            float vol = Mathf.Lerp(1f, cabinVolume, cabin) * GameSettings.Crowd;
+            float vol = Mathf.Lerp(1f, cabinVolume, cabin);
             float cutoff = Mathf.Lerp(22000f, cabinCutoff, Mathf.Sqrt(cabin));
             if (crowdSource != null)
             {
@@ -236,7 +238,7 @@ namespace CarArena
             var synth = crowdSynth;
             if (synth == null || !useSynth) return;
             synth.excitement = roar;
-            float vol = volume * GameSettings.Crowd;
+            float vol = volume;
             for (int i = 0; i < data.Length; i += channels)
             {
                 synth.Render(out float l, out float r);

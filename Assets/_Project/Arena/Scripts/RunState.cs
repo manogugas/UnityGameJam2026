@@ -17,12 +17,14 @@ namespace CarArena
         public int wins;
         public int kills;
         public int[] upgrades = new int[UpgradeSlots];
-        public const int UpgradeSlots = 6;
+        public const int UpgradeSlots = 7;
         [Tooltip("-1 = full health.")]
         public float health = -1f;
         [Tooltip("Number the emperor marked for the next match (-1 = not chosen yet).")]
         public int markedNumber = -1;
         public bool championBeaten;
+        [Tooltip("Drivetrain picked at the start of the run (CarController.DriveType), -1 = not picked (old saves: RWD).")]
+        public int driveType = -1;
 
         public bool HasNumber => carNumber >= 0 && carNumber <= 99;
 

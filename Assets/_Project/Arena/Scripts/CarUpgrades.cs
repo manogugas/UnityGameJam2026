@@ -22,14 +22,15 @@ namespace CarArena
         public float[] ramTakenMultiplier = { 0.45f, 0.36f, 0.28f, 0.2f };
         [Tooltip("Extra damage dealt to the car you ram.")]
         public float[] ramDealtMultiplier = { 1f, 1.15f, 1.3f, 1.5f };
+        // Boost and gun: level 0 = not fitted (locked), level 1 = stock, levels 2-3 improve it.
         [Tooltip("Boost tank: how fast the meter drains while boosting (lower = lasts longer).")]
-        public float[] boostDrainMultiplier = { 1f, 0.82f, 0.68f, 0.55f };
+        public float[] boostDrainMultiplier = { 1f, 1f, 0.75f, 0.55f };
         [Tooltip("Boost tank: how fast the meter refills on its own and from rams and pads.")]
-        public float[] boostRefillMultiplier = { 1f, 1.3f, 1.6f, 2f };
+        public float[] boostRefillMultiplier = { 1f, 1f, 1.4f, 2f };
         [Tooltip("Machine gun damage bonus.")]
-        public float[] gunDamageBonus = { 0f, 0.2f, 0.4f, 0.65f };
+        public float[] gunDamageBonus = { 0f, 0f, 0.3f, 0.65f };
         [Tooltip("Machine gun magazine bonus.")]
-        public float[] gunMagazineBonus = { 0f, 0.25f, 0.5f, 0.8f };
+        public float[] gunMagazineBonus = { 0f, 0f, 0.4f, 0.8f };
 
         [Header("Visuals (enabled from that level up)")]
         public GameObject[] armourLevels;
@@ -64,7 +65,7 @@ namespace CarArena
         }
 
         /// <summary>Apply levels; current health keeps its missing amount (armour adds fresh plating).</summary>
-        public void Apply(int armour, int engine, int tyres, int ram, int boostLevel = 0, int gunLevel = 0)
+        public void Apply(int armour, int engine, int tyres, int ram, int boostLevel = 0, int gunLevel = 0, int tractionLevel = 0)
         {
             Capture();
             float newMax = MaxHealthFor(armour);
@@ -89,13 +90,20 @@ namespace CarArena
                 boost.regenPerSecond = baseRegen * refill;
                 boost.ramRefill = baseRamRefill * refill;
                 boost.padRefillScale = refill;
+                boost.unlocked = boostLevel > 0;
+                if (!boost.unlocked) boost.charge = 0f;
+                else if (boost.charge <= 0f) boost.charge = 0.6f; // just fitted: starts part full
             }
             if (gun != null)
             {
                 gun.damage = baseGunDamage * (1f + At(gunDamageBonus, gunLevel));
                 gun.magazine = Mathf.RoundToInt(baseMagazine * (1f + At(gunMagazineBonus, gunLevel)));
+                gun.SetUnlocked(gunLevel > 0);
                 gun.Reload();
             }
+
+            // Traction control upgrade: the assists switch (B). Without it the assists are always on.
+            car.SetAssistsLocked(tractionLevel <= 0);
 
             ShowLevels(armourLevels, armour);
             ShowLevels(ramPlateLevels, ram);

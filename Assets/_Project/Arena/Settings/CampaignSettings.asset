@@ -93,17 +93,22 @@ MonoBehaviour:
     - 'Ram: -38% taken, +30% dealt'
     - 'Ram: -55% taken, +50% dealt'
     costs: 960000002c010000f4010000i
+  - type: 6
+    displayName: Traction control switch
+    levelText:
+    - 'Assists OFF switch (B): full manual control'
+    costs: 96000000i
   - type: 4
     displayName: Boost tank
     levelText:
-    - Lasts +20%, refills +30%
-    - Lasts +45%, refills +60%
+    - Fit boost (Shift)
+    - Lasts +33%, refills +40%
     - Lasts +80%, refills x2
-    costs: 78000000fa00000090010000i
+    costs: 64000000dc0000007c010000i
   - type: 5
     displayName: Machine gun
     levelText:
-    - +20% damage, +25% ammo
-    - +40% damage, +50% ammo
+    - Fit machine gun
+    - +30% damage, +40% ammo
     - +65% damage, +80% ammo
     costs: 78000000fa00000090010000i

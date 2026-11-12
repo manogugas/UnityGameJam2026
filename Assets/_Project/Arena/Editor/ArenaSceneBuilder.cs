@@ -11,7 +11,7 @@ using Unity.Cinemachine;
 namespace CarArena.EditorTools
 {
     /// <summary>Builds the greybox arena test scene and the player car prefab. Re-run any time.</summary>
-    public static class ArenaSceneBuilder
+    public static partial class ArenaSceneBuilder
     {
         const string Root = "Assets/_Project/Arena";
         const string MatDir = Root + "/Materials";
@@ -64,6 +64,7 @@ namespace CarArena.EditorTools
         [MenuItem("Tools/Car Arena/Build Test Scene")]
         public static void Build()
         {
+            GameMixerBuilder.Build(); // audio mixer for the settings sliders (kept if it exists)
             foreach (var d in new[] { MatDir, MeshDir, SurfDir, Root + "/Prefabs", Root + "/Scenes" })
                 Directory.CreateDirectory(d);
             AssetDatabase.Refresh();
@@ -95,6 +96,7 @@ namespace CarArena.EditorTools
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             BuildEnvironment();
             BuildArena(asphalt, sand);
+            BuildCircuit(asphalt, sand);
             var car = BuildCar(asphalt);
             var playerGate = builtGates[0];
             car.transform.SetPositionAndRotation(playerGate.spawnPoint.position, playerGate.spawnPoint.rotation);
@@ -417,6 +419,9 @@ namespace CarArena.EditorTools
 
             // Race line + start/finish: 12 m up the north-south straight, just past the crossing.
             var raceTrack = track.gameObject.AddComponent<RaceTrack>();
+            raceTrack.displayName = "Figure Eight";
+            raceTrack.laps = 3;
+            figure8Track = raceTrack;
             raceTrack.points = centreline.ToArray();
             raceTrack.halfWidth = TrackHalfWidth;
             raceTrack.startIndex = 6;
@@ -2134,6 +2139,7 @@ namespace CarArena.EditorTools
             tabletUI.iconLaurel = ArenaArt.IconLaurel();
             tabletUI.iconBoost = ArenaArt.IconBoost();
             tabletUI.iconGun = ArenaArt.IconGun();
+            tabletUI.iconTraction = ArenaArt.IconTraction();
 
             campaign.settings = settings;
             campaign.player = playerCar.GetComponent<CarController>();
@@ -2200,14 +2206,21 @@ namespace CarArena.EditorTools
         {
             var go = new GameObject("RaceDirector");
             var race = go.AddComponent<RaceDirector>();
-            race.track = Object.FindAnyObjectByType<RaceTrack>();
+            race.track = figure8Track;
             race.arena = director;
             race.player = playerCar.GetComponent<CarController>();
             race.crowd = Object.FindAnyObjectByType<ArenaCrowd>();
             race.laps = 3;
-            race.checkpointMarkers = BuildCheckpointGates(race.track);
+            foreach (var t in new[] { figure8Track, circuitTrack })
+                if (t != null) t.checkpointMarkers = BuildCheckpointGates(t);
+            race.checkpointMarkers = figure8Track.checkpointMarkers;
             var campaign = Object.FindAnyObjectByType<CampaignDirector>();
-            if (campaign != null) campaign.race = race;
+            if (campaign != null)
+            {
+                campaign.race = race;
+                // First half of the ladder on the figure-8 in the arena, second half (and endless) on the circuit.
+                campaign.raceTracks = new[] { figure8Track, circuitTrack };
+            }
         }
 
         /// <summary>An arch over the road at every checkpoint (and the finish line); the banner is what lights up.
@@ -2369,14 +2382,16 @@ namespace CarArena.EditorTools
                 AssetDatabase.CreateAsset(s, path);
             }
             s.enemyPrefabs = enemyPrefabs; // always point at the freshly built prefabs
-            // Boost and gun tracks were added later: append them to existing settings assets.
+            // Boost and gun tracks (added later): level 1 fits the part (locked until then), 2-3 improve it.
             var tracks = new System.Collections.Generic.List<UpgradeTrack>(s.upgrades ?? new UpgradeTrack[0]);
-            if (s.Track(UpgradeType.Boost) == null)
-                tracks.Add(new UpgradeTrack { type = UpgradeType.Boost, displayName = "Boost tank",
-                    levelText = new[] { "Lasts +20%, refills +30%", "Lasts +45%, refills +60%", "Lasts +80%, refills x2" }, costs = new[] { 120, 250, 400 } });
-            if (s.Track(UpgradeType.Gun) == null)
-                tracks.Add(new UpgradeTrack { type = UpgradeType.Gun, displayName = "Machine gun",
-                    levelText = new[] { "+20% damage, +25% ammo", "+40% damage, +50% ammo", "+65% damage, +80% ammo" }, costs = new[] { 120, 250, 400 } });
+            tracks.RemoveAll(t => t.type == UpgradeType.Boost || t.type == UpgradeType.Gun);
+            tracks.Add(new UpgradeTrack { type = UpgradeType.Boost, displayName = "Boost tank",
+                levelText = new[] { "Fit boost (Shift)", "Lasts +33%, refills +40%", "Lasts +80%, refills x2" }, costs = new[] { 100, 220, 380 } });
+            tracks.Add(new UpgradeTrack { type = UpgradeType.Gun, displayName = "Machine gun",
+                levelText = new[] { "Fit machine gun", "+30% damage, +40% ammo", "+65% damage, +80% ammo" }, costs = new[] { 120, 250, 400 } });
+            if (!tracks.Exists(t => t.type == UpgradeType.Traction))
+                tracks.Add(new UpgradeTrack { type = UpgradeType.Traction, displayName = "Traction control switch",
+                    levelText = new[] { "Assists OFF switch (B): full manual control" }, costs = new[] { 150 } });
             s.upgrades = tracks.ToArray();
             if (s.championNumber < 10) s.championNumber = 10; // numbers are two digits now
             if (s.giftMoney == new Vector2Int(20, 45)) s.giftMoney = new Vector2Int(10, 20); // gifts are a bonus, fights pay

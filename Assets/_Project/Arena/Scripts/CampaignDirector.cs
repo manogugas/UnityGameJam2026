@@ -17,7 +17,7 @@ namespace CarArena
     /// </summary>
     public class CampaignDirector : MonoBehaviour
     {
-        public enum Phase { Start, PickNumber, Garage, DrivingOut, Match, Result }
+        public enum Phase { Start, PickCar, PickNumber, Garage, DrivingOut, Match, Result }
 
         public CampaignSettings settings;
         public CarController player;
@@ -30,6 +30,8 @@ namespace CarArena
         public ArenaGate playerGate;
         public ArenaCrowd crowd;
         public RaceDirector race;
+        [Tooltip("Race venues in ladder order: the first half of the ladder races on [0], the second half (and endless) on [1].")]
+        public RaceTrack[] raceTracks;
         [Tooltip("Share of the win reward paid for 2nd, 3rd... place in a race.")]
         public float[] placePurse = { 0.5f, 0.25f };
 
@@ -43,6 +45,17 @@ namespace CarArena
         public float PlayerMaxHealth => health != null ? health.maxHealth : 0f;
         /// <summary>Arena fights unlock once the race championship (the ladder's final race) has been won.</summary>
         public bool ArenaUnlocked => run != null && run.championBeaten;
+
+        /// <summary>Where the next race is run: the figure-8 for the first half of the ladder, then the circuit.</summary>
+        public RaceTrack NextRaceTrack => TrackFor(run != null ? run.matchIndex : 0);
+
+        public RaceTrack TrackFor(int matchIndex)
+        {
+            if (raceTracks == null || raceTracks.Length == 0) return race != null ? race.track : null;
+            int half = Mathf.Max(1, (settings != null ? settings.LadderLength : 8) / 2);
+            int i = Mathf.Clamp(matchIndex / half, 0, raceTracks.Length - 1);
+            return raceTracks[i] != null ? raceTracks[i] : raceTracks[0];
+        }
 
         /// <summary>The event in progress (or about to start) is a race rather than an arena fight.</summary>
         public bool RaceMode { get; private set; }
@@ -109,6 +122,18 @@ namespace CarArena
             run = new RunState { money = settings.startingMoney };
             damage.RepairAll();
             ApplyRunToCar(run);
+            CurrentPhase = Phase.PickCar;
+            tablet.ShowCarPicker(DriveType.AWD);
+        }
+
+        /// <summary>Car picker: try a drivetrain (same body for now).</summary>
+        public void PreviewDrive(DriveType type) => player.SetDriveType(type);
+
+        /// <summary>Car picked: on to the number.</summary>
+        public void ConfirmDrive(DriveType type)
+        {
+            run.driveType = (int)type;
+            player.SetDriveType(type);
             CurrentPhase = Phase.PickNumber;
             tablet.ShowNumberPicker(Random.Range(0, 100));
         }
@@ -213,6 +238,7 @@ namespace CarArena
             for (float t = 0f; !tablet.Stowed && t < 3f; t += Time.deltaTime) yield return null;
             yield return overlay.FadeTo(1f, 0.5f);
             ResetMatchTally();
+            race.UseTrack(NextRaceTrack);
             race.Setup(nextEnemies);
             if (hud != null) hud.enabled = true;
             if (combatHud != null) combatHud.enabled = true;
@@ -470,6 +496,8 @@ namespace CarArena
 
         void ApplyRunToCar(RunState r)
         {
+            player.drivetrainLocked = true;
+            if (r.driveType >= 0) player.SetDriveType((DriveType)r.driveType);
             ApplyUpgrades(r);
             float hp = r.health < 0f ? health.maxHealth : r.health;
             health.SetHealth(hp);
@@ -483,7 +511,7 @@ namespace CarArena
         {
             if (upgrades == null) return;
             upgrades.Apply(r.Level(UpgradeType.Armour), r.Level(UpgradeType.Engine), r.Level(UpgradeType.Tyres), r.Level(UpgradeType.RamPlate),
-                r.Level(UpgradeType.Boost), r.Level(UpgradeType.Gun));
+                r.Level(UpgradeType.Boost), r.Level(UpgradeType.Gun), r.Level(UpgradeType.Traction));
         }
 
         static void SetCursor(bool visible)

@@ -71,6 +71,31 @@ namespace CarArena
         GUIStyle big, mid, small;
         CarInput playerInput;
 
+        /// <summary>Race on another track from the next Setup on (its laps and checkpoint banners come with it).</summary>
+        public void UseTrack(RaceTrack t)
+        {
+            if (t == null || t == track || Running) return;
+            UpdateMarkersOff();
+            track = t;
+            laps = Mathf.Max(1, t.laps);
+            checkpointMarkers = t.checkpointMarkers;
+            litGate = -2;
+        }
+
+        void UpdateMarkersOff()
+        {
+            if (checkpointMarkers == null) return;
+            if (markerBlock == null) markerBlock = new MaterialPropertyBlock();
+            foreach (var r in checkpointMarkers)
+            {
+                if (r == null) continue;
+                r.GetPropertyBlock(markerBlock);
+                markerBlock.SetColor("_BaseColor", gateColour);
+                markerBlock.SetColor("_EmissionColor", Color.black);
+                r.SetPropertyBlock(markerBlock);
+            }
+        }
+
         /// <summary>Grid up: player at the back, opponents ahead of them, everyone held for the countdown.</summary>
         public void Setup(IList<EnemySpec> opponents)
         {

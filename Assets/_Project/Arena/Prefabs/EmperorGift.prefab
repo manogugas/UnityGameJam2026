@@ -193,7 +193,7 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
---- !u!1 &4007395363084379894
+--- !u!1 &2649184713438388102
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -201,9 +201,9 @@ GameObject:
   m_PrefabAsset: {fileID: 0}
   serializedVersion: 6
   m_Component:
-  - component: {fileID: 8847485974406745755}
-  - component: {fileID: 9009092417123132946}
-  - component: {fileID: 653058230734979503}
+  - component: {fileID: 1435767386187038203}
+  - component: {fileID: 1397826541800124880}
+  - component: {fileID: 321052211466568985}
   m_Layer: 0
   m_Name: Band
   m_TagString: Untagged
@@ -211,13 +211,13 @@ GameObject:
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!4 &8847485974406745755
+--- !u!4 &1435767386187038203
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4007395363084379894}
+  m_GameObject: {fileID: 2649184713438388102}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0.45, y: 0.3, z: 0}
@@ -226,21 +226,21 @@ Transform:
   m_Children: []
   m_Father: {fileID: 5341786452130697662}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!33 &9009092417123132946
+--- !u!33 &1397826541800124880
 MeshFilter:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4007395363084379894}
+  m_GameObject: {fileID: 2649184713438388102}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!23 &653058230734979503
+--- !u!23 &321052211466568985
 MeshRenderer:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 4007395363084379894}
+  m_GameObject: {fileID: 2649184713438388102}
   m_Enabled: 1
   m_CastShadows: 1
   m_ReceiveShadows: 1
@@ -682,7 +682,7 @@ Transform:
   - {fileID: 288824342642220650}
   - {fileID: 5389482195408537902}
   - {fileID: 8691959934078607196}
-  - {fileID: 8847485974406745755}
+  - {fileID: 1435767386187038203}
   - {fileID: 698328234575758020}
   - {fileID: 8496067557452547256}
   m_Father: {fileID: 8195769100071021225}
